@@ -1,37 +1,38 @@
-# FutonHUB Launcher 0.12.0
+# FutonHUB Launcher 0.11.1
 
-Autonomous Windows launcher for installing, updating, validating and opening
-FutonHUB.
+Launcher autónomo para Windows. Cada equipo recibe una sola vez `FutonHUB Launcher.exe`.
 
-## Update channels
+Al abrirlo:
 
-- **ERP:** reads the exact commit from the private repository
-  `Shirobe95/FutonEspaiHUB`, branch `refactor/modularizacion-v1`.
-- **Launcher:** reads public GitHub Releases from
-  `Shirobe95/FutonHub-Launcher`.
+1. crea `%LOCALAPPDATA%\FutonHUB`;
+2. solicita una vez un token GitHub fine-grained de solo lectura;
+3. consulta `Shirobe95/FutonEspaiHUB`, rama `refactor/modularizacion-v1`;
+4. compara el commit local y remoto;
+5. instala Python 3.13.14 si no hay un Python compatible;
+6. prepara un entorno aislado por hash de dependencias;
+7. instala o actualiza con staging, health check, backup y rollback;
+8. conserva `.env`, SQLite, constantes, Excel y datos locales;
+9. abre el ERP con el runtime administrado, manteniendo `Abrir ERP.bat` como respaldo manual.
 
-The private ERP token is stored in Windows Credential Manager and is never sent
-to the public launcher repository.
+LAUNCH-011.1 corrige la descarga del snapshot GitHub (`HTTP 415`) usando el tipo de contenido exigido por el endpoint `zipball`.
 
-## Local build
+## Construcción del EXE
+
+En la máquina de administración:
 
 ```text
 run_tests.bat
 build_launcher.bat
 ```
 
-Artifacts:
+Entregable final:
 
 ```text
-dist/FutonHUB-Launcher.exe
-dist/FutonHUB-Launcher.exe.sha256
+dist/FutonHUB Launcher.exe
 ```
 
-## Automated release
+Ese EXE es lo único que se entrega a cada máquina. No necesitan Git, Python ni Release Manager.
 
-Push source changes to `main`, wait for CI, then run the
-**Publish launcher release** workflow with the exact source version. The workflow
-creates the GitHub Release and uploads both required assets.
+## Acceso al repositorio privado
 
-See `docs/ARCHITECTURE.md`, `docs/RELEASES.md` and
-`docs/GUIA_PC_NUEVO.md`.
+La primera ejecución solicita un token fine-grained limitado al repositorio `FutonEspaiHUB` con permiso `Contents: Read-only`. Se guarda en Windows Credential Manager y nunca en JSON, `.env` ni logs.

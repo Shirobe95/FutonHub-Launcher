@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv*/
+
+# Build outputs
+build/
+dist/
+*.spec
+
+# Local state and secrets
+.env
+*.pem
+*.sqlite3
+launcher.json
+trusted_release_keys.json
+release_operations.json
+logs/
+backups/
+Downloads/
+Staging/
+Runtime/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Recreated from tracked Base64 assets during build
+assets/futonhub.ico
+assets/launcher_icon.png

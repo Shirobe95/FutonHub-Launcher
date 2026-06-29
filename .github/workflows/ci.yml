@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install build dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements_build.txt
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Compile sources
+        run: python -m compileall -q main.py futonhub_auto
+      - name: Build Windows executable
+        shell: cmd
+        env:
+          CI: "true"
+        run: build_launcher.bat
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: FutonHUB-Launcher-${{ github.sha }}
+          path: |
+            dist/FutonHUB-Launcher.exe
+            dist/FutonHUB-Launcher.exe.sha256
+          if-no-files-found: error
