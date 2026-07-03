@@ -16,9 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-          cache: pip
+  	with:
+    		python-version: "3.13"
+    		cache: pip
+    		cache-dependency-path: requirements_build.txt
       - name: Install build dependencies
         run: python -m pip install --disable-pip-version-check -r requirements_build.txt
       - name: Run tests
