@@ -92,6 +92,29 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(info["commit"], commit)
             self.assertEqual((destination / "SOURCE_COMMIT").read_text().strip(), commit)
 
+
+    def test_source_info_records_semantic_version_from_package(self) -> None:
+        import json
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source"
+            make_snapshot(source)
+            pyproject = source / "GestorWoo/pyproject.toml"
+            pyproject.write_text('[project]\nversion = "0.3.0"\n', encoding="utf-8")
+            destination = root / "app"
+            create_runtime(
+                source,
+                destination,
+                commit="d" * 40,
+                repository="o/r",
+                branch="main",
+                commit_date="2026",
+                archive_sha256="hash",
+            )
+            info = json.loads((destination / "SOURCE_INFO.json").read_text())
+            self.assertEqual(info["installed_version"], "0.3.0")
+            self.assertEqual((destination / "VERSION").read_text().strip(), "0.3.0")
+
     def test_preserves_operational_constants(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

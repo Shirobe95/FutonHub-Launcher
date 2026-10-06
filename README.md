@@ -1,38 +1,37 @@
-# FutonHUB Launcher 0.11.1
+# FutonHUB Launcher 0.14.0
 
-Launcher autónomo para Windows. Cada equipo recibe una sola vez `FutonHUB Launcher.exe`.
+Launcher autónomo para Windows. Instala, actualiza, valida y abre FutonHUB sin que el trabajador tenga que usar Git, Python ni consola.
 
-Al abrirlo:
+## Interfaz
 
-1. crea `%LOCALAPPDATA%\FutonHUB`;
-2. solicita una vez un token GitHub fine-grained de solo lectura;
-3. consulta `Shirobe95/FutonEspaiHUB`, rama `refactor/modularizacion-v1`;
-4. compara el commit local y remoto;
-5. instala Python 3.13.14 si no hay un Python compatible;
-6. prepara un entorno aislado por hash de dependencias;
-7. instala o actualiza con staging, health check, backup y rollback;
-8. conserva `.env`, SQLite, constantes, Excel y datos locales;
-9. abre el ERP con el runtime administrado, manteniendo `Abrir ERP.bat` como respaldo manual.
+- Vista compacta con logo FutonEspai.
+- Botón principal: **Abrir FutonHUB**.
+- Botón secundario: **Comprobar**.
+- Detalles técnicos plegables.
+- Panel de administración oculto por defecto. Se muestra con `Ctrl+Shift+A` o configurando `worker_mode=false`.
+- Errores con ventana visual y botón para copiar el mensaje de soporte.
 
-LAUNCH-011.1 corrige la descarga del snapshot GitHub (`HTTP 415`) usando el tipo de contenido exigido por el endpoint `zipball`.
+## Canales de actualización
 
-## Construcción del EXE
+- **FutonHUB ERP:** repositorio privado `Shirobe95/FutonEspaiHUB`, rama `main`, comparación por commit.
+- **Launcher:** repositorio público `Shirobe95/FutonHub-Launcher`, Releases `launcher-vX.Y.Z`, verificación SHA-256 y reemplazo transaccional.
 
-En la máquina de administración:
+El token privado del ERP se guarda en Windows Credential Manager y no se envía al repositorio público del launcher.
+
+## Build local
 
 ```text
 run_tests.bat
 build_launcher.bat
 ```
 
-Entregable final:
+Artefactos:
 
 ```text
-dist/FutonHUB Launcher.exe
+dist/FutonHUB-Launcher.exe
+dist/FutonHUB-Launcher.exe.sha256
 ```
 
-Ese EXE es lo único que se entrega a cada máquina. No necesitan Git, Python ni Release Manager.
+## Release
 
-## Acceso al repositorio privado
-
-La primera ejecución solicita un token fine-grained limitado al repositorio `FutonEspaiHUB` con permiso `Contents: Read-only`. Se guarda en Windows Credential Manager y nunca en JSON, `.env` ni logs.
+Tras subir el código a `main` y ver CI en verde, ejecutar **Publish launcher release** con la versión exacta, por ejemplo `0.14.0`.

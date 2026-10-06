@@ -15,6 +15,11 @@ from .errors import UpdateError, ValidationError
 from .github_api import CommitInfo, GitHubClient
 from .logging_utils import AuditLogger
 from .paths import AppPaths
+from .versioning import (
+    display_version,
+    read_installed_futonhub_version,
+    read_persisted_futonhub_version,
+)
 from .python_runtime import (
     ensure_base_python,
     install_managed_python,
@@ -57,6 +62,21 @@ class DirectGitUpdater:
         except OSError:
             return ""
         return value if len(value) == 40 else ""
+
+    def local_version(self) -> str | None:
+        return read_installed_futonhub_version(self.paths.app)
+
+    def _audit_version_metadata(self, commit: str) -> str | None:
+        actual = self.local_version()
+        persisted = read_persisted_futonhub_version(self.paths.app)
+        if actual and persisted and actual != persisted:
+            self.audit.write(
+                "version_metadata_mismatch",
+                commit=commit,
+                package_version=actual,
+                persisted_version=persisted,
+            )
+        return actual
 
     def _write_journal(self, phase: str, **details: object) -> None:
         payload = {"phase": phase, **details}
@@ -190,14 +210,21 @@ class DirectGitUpdater:
                 )
                 shutil.rmtree(runtime_path.parent, ignore_errors=True)
             else:
+                installed_version = self._audit_version_metadata(commit.sha)
+                version_text = (
+                    f" {display_version(installed_version)}"
+                    if installed_version
+                    else ""
+                )
                 return UpdateOutcome(
                     False,
                     commit.sha,
                     previous_commit,
                     (
-                        "FutonHUB ya está actualizado; componentes del launcher reparados."
+                        f"FutonHUB{version_text} ya está actualizado; "
+                        "componentes del launcher reparados."
                         if managed_changed
-                        else "FutonHUB ya está actualizado."
+                        else f"FutonHUB{version_text} ya está actualizado."
                     ),
                 )
 
@@ -303,18 +330,25 @@ class DirectGitUpdater:
             shutil.rmtree(temporary_root, ignore_errors=True)
             archive.unlink(missing_ok=True)
             self.journal.unlink(missing_ok=True)
+            installed_version = self._audit_version_metadata(commit.sha)
             self.audit.write(
                 "update_succeeded",
                 previous=previous_commit,
                 current=commit.sha,
+                installed_version=installed_version,
                 preserved=preserved,
                 backup=str(backup or ""),
+            )
+            message = (
+                f"FutonHUB actualizado a {display_version(installed_version)}."
+                if installed_version
+                else f"FutonHUB actualizado al commit {commit.sha[:12]}."
             )
             return UpdateOutcome(
                 True,
                 commit.sha,
                 previous_commit,
-                f"FutonHUB actualizado al commit {commit.sha[:12]}.",
+                message,
             )
         except Exception as exc:
             if previous_dir.exists():

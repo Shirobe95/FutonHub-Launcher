@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
 import json
 from pathlib import Path
 from typing import Callable
@@ -61,6 +62,52 @@ class GitHubClient:
     def commit_url(self) -> str:
         ref = quote(self.branch, safe="")
         return f"{self.API}/repos/{self.owner}/{self.repository}/commits/{ref}"
+
+    def content_url(self, path: str, ref: str | None = None) -> str:
+        encoded_path = quote(path.strip("/"), safe="/")
+        selected_ref = ref or self.branch
+        return (
+            f"{self.API}/repos/{self.owner}/{self.repository}/contents/"
+            f"{encoded_path}?ref={quote(selected_ref, safe='')}"
+        )
+
+    def fetch_text_file(self, path: str, *, ref: str | None = None) -> str:
+        raw = self._json(self.content_url(path, ref))
+        if not isinstance(raw, dict):
+            raise DownloadError("GitHub no devolvió un archivo válido")
+        if str(raw.get("encoding") or "").casefold() != "base64":
+            raise DownloadError("GitHub devolvió una codificación inesperada")
+        content = raw.get("content")
+        if not isinstance(content, str):
+            raise DownloadError("GitHub no devolvió contenido para el archivo")
+        try:
+            decoded = base64.b64decode(content, validate=False)
+            return decoded.decode("utf-8")
+        except (ValueError, UnicodeError) as exc:
+            raise DownloadError(
+                "No se pudo interpretar el archivo de versión remoto"
+            ) from exc
+
+    def exact_semver_tag(self, commit_sha: str) -> str | None:
+        url = f"{self.API}/repos/{self.owner}/{self.repository}/tags?per_page=100"
+        raw = self._json(url)
+        if not isinstance(raw, list):
+            raise DownloadError("GitHub devolvió un listado de tags inválido")
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            commit = item.get("commit")
+            if not isinstance(commit, dict):
+                continue
+            if str(commit.get("sha") or "") != commit_sha:
+                continue
+            name = str(item.get("name") or "").strip()
+            try:
+                parse_version(name)
+            except ValueError:
+                continue
+            return name
+        return None
 
     def _request(
         self,

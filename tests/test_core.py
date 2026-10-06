@@ -32,8 +32,26 @@ class CoreTests(unittest.TestCase):
             path = Path(temp) / "launcher.json"
             config = LauncherConfig.load_or_create(path)
             raw = path.read_text(encoding="utf-8")
-            self.assertEqual(config.branch, "refactor/modularizacion-v1")
+            self.assertEqual(config.branch, "main")
             self.assertNotIn("token", raw.casefold())
+
+
+    def test_legacy_branch_is_migrated_to_main(self) -> None:
+        import json
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "launcher.json"
+            path.write_text(
+                json.dumps({
+                    "owner": "Shirobe95",
+                    "repository": "FutonEspaiHUB",
+                    "branch": "refactor/modularizacion-v1",
+                }),
+                encoding="utf-8",
+            )
+            config = LauncherConfig.load_or_create(path)
+            self.assertEqual(config.branch, "main")
+            persisted = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["branch"], "main")
 
     def test_memory_credentials(self) -> None:
         store = MemoryCredentialStore()

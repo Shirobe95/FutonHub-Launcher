@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 
 from .errors import ValidationError
+from .versioning import read_installed_futonhub_version
 
 
 PROTECTED_PATHS = (
@@ -249,9 +250,10 @@ def create_runtime(
     shutil.copy2(snapshot / "requirements_erp.txt", destination / "requirements_erp.txt")
     copied += 1
     refresh_managed_files(destination)
+    package_version = read_installed_futonhub_version(snapshot)
     (destination / "SOURCE_COMMIT").write_text(commit + "\n", encoding="ascii")
     (destination / "VERSION").write_text(
-        f"0.0.0+git.{commit[:12]}\n",
+        (package_version or f"0.0.0+git.{commit[:12]}") + "\n",
         encoding="ascii",
     )
     (destination / "SOURCE_INFO.json").write_text(
@@ -262,6 +264,7 @@ def create_runtime(
                 "commit": commit,
                 "commit_date": commit_date,
                 "archive_sha256": archive_sha256,
+                "installed_version": package_version,
             },
             ensure_ascii=False,
             indent=2,

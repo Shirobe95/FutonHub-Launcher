@@ -9,10 +9,11 @@ from pathlib import Path
 class LauncherConfig:
     owner: str = "Shirobe95"
     repository: str = "FutonEspaiHUB"
-    branch: str = "refactor/modularizacion-v1"
+    branch: str = "main"
     credential_target: str = "FutonHUB/GitHubReadOnly"
     auto_open_erp: bool = True
     self_update_enabled: bool = True
+    worker_mode: bool = True
     launcher_owner: str = "Shirobe95"
     launcher_repository: str = "FutonHub-Launcher"
     backup_retention: int = 3
@@ -36,7 +37,15 @@ class LauncherConfig:
         except (OSError, json.JSONDecodeError) as exc:
             raise ValueError(f"Configuración inválida: {exc}") from exc
         allowed = set(cls.__dataclass_fields__)
-        return cls(**{key: value for key, value in raw.items() if key in allowed})
+        config = cls(**{key: value for key, value in raw.items() if key in allowed})
+        if (
+            config.owner == "Shirobe95"
+            and config.repository == "FutonEspaiHUB"
+            and config.branch == "refactor/modularizacion-v1"
+        ):
+            config.branch = "main"
+            config.save(path)
+        return config
 
     def save(self, path: Path) -> None:
         temporary = path.with_suffix(path.suffix + ".tmp")

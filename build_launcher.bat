@@ -14,11 +14,13 @@ call ".venv_build\Scripts\activate.bat"
 python -m pip install --disable-pip-version-check -r requirements_build.txt
 if not exist "assets\futonhub.ico" certutil -decode "assets\futonhub.ico.b64" "assets\futonhub.ico" >nul
 if not exist "assets\launcher_icon.png" certutil -decode "assets\launcher_icon.png.b64" "assets\launcher_icon.png" >nul
+if not exist "assets\futonespai_logo.png" certutil -decode "assets\futonespai_logo.png.b64" "assets\futonespai_logo.png" >nul
 python -m PyInstaller --noconfirm --clean --onefile --windowed ^
   --name "FutonHUB Launcher" ^
   --icon "assets\futonhub.ico" ^
   --version-file "assets\version_info.txt" ^
   --add-data "assets\launcher_icon.png;assets" ^
+  --add-data "assets\futonespai_logo.png;assets" ^
   main.py
 if errorlevel 1 (
   echo RESULTADO FINAL: BUILD CON ERROR
