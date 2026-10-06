@@ -16,6 +16,15 @@ Canal de pruebas (esta rama compila `CHANNEL_NAME = "test"`, ver `futonhub_auto/
 - Primera instalación sin ERP: se instala sola; si el Python del sistema no tiene tkinter/venv
   o falla la validación, usa el Python administrado en vez de dar error.
 
+Visual (sistema PALIKO, `futonhub_auto/theme.py`):
+
+- Tema oscuro grafito/azulado con acento cian, paneles planos de 1 px, tipografía del sistema
+  (Segoe UI en Windows) y barra de título oscura en Windows 10/11.
+- Estado principal con indicador de color (trabajando / listo / avisos / detenido), barra de
+  progreso, commits instalado y remoto (datos reales), actividad con niveles por color, una
+  acción principal («Abrir FutonHUB») y el resto en secundarias y en «Más».
+- Tests de humo de la GUI (se omiten si no hay pantalla).
+
 Funcional:
 
 - GitHub: errores diferenciados (token 401, permisos 403, límite de uso 403/429, recurso 404,

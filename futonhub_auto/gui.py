@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import os
 from pathlib import Path
 import queue
@@ -20,6 +21,7 @@ from .flow import FailureDecision, StartupFlow
 from .github_api import GitHubClient, clean_token
 from .paths import AppPaths
 from .resources import resource_path
+from .theme import PALETTE, StatusDot, Monogram, apply_dark_title_bar, card, configure_styles, load_fonts, style_menu
 from .transaction import DirectGitUpdater
 from .uninstall import schedule_full_uninstall
 
@@ -52,8 +54,8 @@ class LauncherWindow:
     def _build(self) -> None:
         badge = f" [{CHANNEL.window_badge}]" if CHANNEL.window_badge else ""
         self.root.title(f"FutonHUB Launcher {LAUNCHER_VERSION}{badge}")
-        self.root.geometry("790x560")
-        self.root.minsize(680, 480)
+        self.root.geometry("820x620")
+        self.root.minsize(700, 540)
         try:
             self._icon_image = tk.PhotoImage(
                 file=str(resource_path("assets/launcher_icon.png"))
@@ -61,129 +63,119 @@ class LauncherWindow:
             self.root.iconphoto(True, self._icon_image)
         except (tk.TclError, OSError):
             self._icon_image = None
+        self.fonts = load_fonts(self.root)
+        configure_styles(self.root, self.fonts)
+        apply_dark_title_bar(self.root)
+        p = PALETTE
+        f = self.fonts
+        self.headline = tk.StringVar(value="Preparando")
 
-        outer = ttk.Frame(self.root, padding=24)
+        outer = tk.Frame(self.root, bg=p.bg, padx=28, pady=22)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(5, weight=1)
+        outer.rowconfigure(3, weight=1)
 
-        ttk.Label(
-            outer,
-            text="FutonHUB Launcher" + (f"  ·  {CHANNEL.window_badge}" if CHANNEL.window_badge else ""),
-            font=("Segoe UI", 20, "bold"),
-        ).grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            outer,
-            text=f"Comprueba, instala, actualiza y abre FutonHUB automáticamente · v{LAUNCHER_VERSION}",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 16))
+        # Cabecera: marca, nombre, canal y versión
+        header = tk.Frame(outer, bg=p.bg)
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(2, weight=1)
+        Monogram(header, f).grid(row=0, column=0, rowspan=2, padx=(0, 14))
+        tk.Label(header, text="FutonHUB Launcher", bg=p.bg, fg=p.text, font=f.get(18, "bold")).grid(row=0, column=1, sticky="sw")
+        if CHANNEL.window_badge:
+            tk.Label(
+                header, text=CHANNEL.window_badge, bg=p.surface_2, fg=p.accent, font=f.get(8, "bold"),
+                padx=8, pady=2, highlightthickness=1, highlightbackground=p.border_strong,
+            ).grid(row=0, column=2, sticky="w", padx=(12, 0), pady=(6, 0))
+        tk.Label(header, text=f"v{LAUNCHER_VERSION}", bg=p.bg, fg=p.text_faint, font=f.get(10)).grid(row=0, column=3, sticky="e")
 
-        cards = ttk.Frame(outer)
-        cards.grid(row=2, column=0, sticky="ew")
-        cards.columnconfigure((0, 1), weight=1)
-        for column, title, variable in (
-            (0, "Commit instalado", self.local),
-            (1, "Commit remoto", self.remote),
-        ):
-            box = ttk.LabelFrame(cards, text=title, padding=12)
-            box.grid(
-                row=0,
-                column=column,
-                sticky="ew",
-                padx=(0, 8) if column == 0 else (8, 0),
-            )
-            ttk.Label(
-                box,
-                textvariable=variable,
-                font=("Segoe UI", 11, "bold"),
-            ).pack(anchor="w")
+        # Estado principal
+        hero = card(outer, padx=20, pady=18)
+        hero.grid(row=1, column=0, sticky="ew", pady=(20, 12))
+        hero.columnconfigure(1, weight=1)
+        self.dot = StatusDot(hero, size=14)
+        self.dot.grid(row=0, column=0, padx=(0, 12))
+        tk.Label(hero, textvariable=self.headline, bg=p.surface, fg=p.text, font=f.get(15, "bold"), anchor="w").grid(row=0, column=1, sticky="ew")
+        tk.Label(hero, textvariable=self.status, bg=p.surface, fg=p.text_muted, font=f.get(10), anchor="w", justify="left", wraplength=700).grid(row=1, column=1, sticky="ew", pady=(4, 0))
+        self.progress = ttk.Progressbar(hero, mode="indeterminate", style="Paliko.Horizontal.TProgressbar")
+        self.progress.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(16, 0))
 
-        ttk.Label(outer, textvariable=self.status).grid(
-            row=3,
-            column=0,
-            sticky="w",
-            pady=(14, 5),
-        )
-        self.progress = ttk.Progressbar(outer, mode="indeterminate")
-        self.progress.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+        # Versiones (datos reales: commit instalado y commit remoto)
+        versions = tk.Frame(outer, bg=p.bg)
+        versions.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        versions.columnconfigure((0, 1), weight=1, uniform="v")
+        for column, title, variable in ((0, "INSTALADA", self.local), (1, "EN GITHUB", self.remote)):
+            box = card(versions, padx=16, pady=12)
+            box.grid(row=0, column=column, sticky="ew", padx=(0, 6) if column == 0 else (6, 0))
+            tk.Label(box, text=title, bg=p.surface, fg=p.text_faint, font=f.get(8, "bold")).pack(anchor="w")
+            tk.Label(box, textvariable=variable, bg=p.surface, fg=p.text, font=f.get(13, "bold", mono=True)).pack(anchor="w", pady=(4, 0))
 
-        activity = ttk.LabelFrame(outer, text="Actividad", padding=8)
-        activity.grid(row=5, column=0, sticky="nsew")
-        activity.rowconfigure(0, weight=1)
+        # Actividad
+        activity = card(outer, padx=0, pady=0)
+        activity.grid(row=3, column=0, sticky="nsew")
+        activity.rowconfigure(1, weight=1)
         activity.columnconfigure(0, weight=1)
+        tk.Label(activity, text="ACTIVIDAD", bg=p.surface, fg=p.text_faint, font=f.get(8, "bold"), anchor="w").grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=(12, 4))
         self.log = tk.Text(
-            activity,
-            state="disabled",
-            wrap="word",
-            font=("Consolas", 9),
-            height=14,
-            padx=10,
-            pady=10,
+            activity, state="disabled", wrap="word", font=f.get(9, mono=True), height=9, padx=16, pady=6,
+            bg=p.surface, fg=p.text, insertbackground=p.text, relief="flat", bd=0, highlightthickness=0,
+            selectbackground=p.border_strong, spacing1=2, spacing3=2,
         )
-        self.log.grid(row=0, column=0, sticky="nsew")
-        scroll = ttk.Scrollbar(activity, command=self.log.yview)
-        scroll.grid(row=0, column=1, sticky="ns")
+        self.log.grid(row=1, column=0, sticky="nsew", padx=(0, 0), pady=(0, 10))
+        scroll = ttk.Scrollbar(activity, command=self.log.yview, style="Paliko.Vertical.TScrollbar")
+        scroll.grid(row=1, column=1, sticky="ns", pady=(0, 10), padx=(0, 6))
         self.log.configure(yscrollcommand=scroll.set)
+        self.log.tag_configure("time", foreground=p.text_faint)
+        self.log.tag_configure("info", foreground=p.text)
+        self.log.tag_configure("ok", foreground=p.success)
+        self.log.tag_configure("warn", foreground=p.warning)
+        self.log.tag_configure("error", foreground=p.danger)
 
-        buttons = ttk.Frame(outer)
-        buttons.grid(row=6, column=0, sticky="ew", pady=(12, 0))
-        buttons.columnconfigure(4, weight=1)
-        self.retry_button = ttk.Button(
-            buttons,
-            text="Comprobar ahora",
-            command=self.start_automatic,
-        )
-        self.retry_button.grid(row=0, column=0, padx=(0, 8))
-        self.open_button = ttk.Button(
-            buttons,
-            text="Abrir FutonHUB",
-            command=self.open_erp,
-            state="disabled",
-        )
-        self.open_button.grid(row=0, column=1, padx=(0, 8))
-        self.github_button = ttk.Button(
-            buttons,
-            text="Configurar GitHub",
-            command=self.configure_token,
-        )
+        # Acciones: una principal, cuatro secundarias y el resto en «Más»
+        actions = tk.Frame(outer, bg=p.bg)
+        actions.grid(row=4, column=0, sticky="ew", pady=(14, 0))
+        actions.columnconfigure(5, weight=1)
+        self.open_button = ttk.Button(actions, text="Abrir FutonHUB", command=self.open_erp, state="disabled", style="Primary.TButton")
+        self.open_button.grid(row=0, column=0, padx=(0, 8))
+        self.retry_button = ttk.Button(actions, text="Comprobar", command=self.start_automatic, style="Secondary.TButton")
+        self.retry_button.grid(row=0, column=1, padx=(0, 8))
+        self.github_button = ttk.Button(actions, text="GitHub", command=self.configure_token, style="Secondary.TButton")
         self.github_button.grid(row=0, column=2, padx=(0, 8))
-        self.env_button = ttk.Button(
-            buttons,
-            text="Configurar .env",
-            command=self.configure_env,
-        )
+        self.env_button = ttk.Button(actions, text=".env", command=self.configure_env, style="Secondary.TButton")
         self.env_button.grid(row=0, column=3, padx=(0, 8))
-        self.logs_button = ttk.Button(
-            buttons,
-            text="Abrir logs",
-            command=self.open_logs,
-        )
-        self.logs_button.grid(row=0, column=5, padx=(0, 8))
-        self.restore_button = ttk.Button(
-            buttons,
-            text="Restaurar anterior…",
-            command=self.restore_previous,
-        )
-        self.restore_button.grid(row=1, column=0, columnspan=2, padx=(0, 8), pady=(8, 0), sticky="w")
-        self.resume_button = ttk.Button(
-            buttons,
-            text="Reanudar actualizaciones",
-            command=self.resume_updates,
-        )
-        self.resume_button.grid(row=1, column=2, columnspan=2, padx=(0, 8), pady=(8, 0), sticky="w")
-        self.uninstall_button = ttk.Button(
-            buttons,
-            text="Desinstalar…",
-            command=self.uninstall_all,
-        )
-        self.uninstall_button.grid(row=0, column=6)
+        self.more_button = ttk.Button(actions, text="Más  ▾", command=self._show_more, style="Ghost.TButton")
+        self.more_button.grid(row=0, column=4)
+        self.more_menu = tk.Menu(self.root)
+        style_menu(self.more_menu, f)
+        self.more_menu.add_command(label="Abrir carpeta de logs", command=self.open_logs)
+        self.more_menu.add_command(label="Restaurar versión anterior…", command=self.restore_previous)
+        self.more_menu.add_command(label="Reanudar actualizaciones", command=self.resume_updates)
+        self.more_menu.add_separator()
+        self.more_menu.add_command(label="Desinstalar…", command=self.uninstall_all, foreground=p.danger)
 
-        self._append(
-            "Launcher iniciado. GitHub se usará exclusivamente en modo lectura."
-        )
+        self._set_state("idle", "Preparando")
+        self._append("Launcher iniciado. GitHub se usa exclusivamente en modo lectura.")
 
-    def _append(self, text: str) -> None:
+    def _show_more(self) -> None:
+        button = self.more_button
+        x = button.winfo_rootx()
+        y = button.winfo_rooty() + button.winfo_height()
+        try:
+            self.more_menu.tk_popup(x, y)
+        finally:
+            self.more_menu.grab_release()
+
+    def _set_state(self, state: str, headline: str | None = None) -> None:
+        self.dot.set_state(state)
+        if headline:
+            self.headline.set(headline)
+
+    def _append(self, text: str, level: str | None = None) -> None:
+        if level is None:
+            upper = text.upper()
+            level = "error" if upper.startswith("ERROR") else "warn" if upper.startswith("AVISO") else "info"
         self.log.configure(state="normal")
-        self.log.insert("end", f"• {text}\n")
+        self.log.insert("end", datetime.now().strftime("%H:%M  "), "time")
+        self.log.insert("end", text + "\n", level)
         self.log.see("end")
         self.log.configure(state="disabled")
 
@@ -193,18 +185,16 @@ class LauncherWindow:
     def _set_busy(self, value: bool, text: str | None = None) -> None:
         self.busy = value
         state = "disabled" if value else "normal"
-        self.retry_button.configure(state=state)
-        self.github_button.configure(state=state)
-        self.env_button.configure(state=state)
-        self.uninstall_button.configure(state=state)
-        self.restore_button.configure(state=state)
-        self.resume_button.configure(state=state)
+        for button in (self.retry_button, self.github_button, self.env_button, self.more_button):
+            button.configure(state=state)
         if value:
             self.open_button.configure(state="disabled")
             self.progress.configure(mode="indeterminate")
             self.progress.start(12)
+            self._set_state("working", "Trabajando")
         else:
             self.progress.stop()
+            self.progress.configure(mode="determinate", value=0)
         if text:
             self.status.set(text)
 
@@ -236,8 +226,9 @@ class LauncherWindow:
                     self.local.set(local[:12] if local else "No instalado")
                     self.remote.set(remote[:12])
                 elif event == "success":
-                    self._set_busy(False, "FutonHUB preparado")
-                    self._append(str(payload))
+                    self._set_busy(False, str(payload))
+                    self._set_state("ready", "Todo listo")
+                    self._append(str(payload), "ok")
                     self.open_button.configure(state="normal")
                     executable = (
                         Path(sys.executable)
@@ -269,6 +260,7 @@ class LauncherWindow:
                 elif event == "launcher_restarting":
                     version = str(payload)
                     self._set_busy(False, f"Actualizando launcher a {version}…")
+                    self._set_state("working", "Actualizando el launcher")
                     self._append(
                         f"Nuevo launcher {version} verificado. Reiniciando…"
                     )
@@ -280,7 +272,8 @@ class LauncherWindow:
                         self._append(f"No se pudo guardar el token: {exc}")
                 elif event == "degraded":
                     decision: FailureDecision = payload
-                    self._set_busy(False, "FutonHUB listo (sin comprobar actualizaciones)")
+                    self._set_busy(False, decision.message)
+                    self._set_state("warning", "Listo, sin comprobar actualizaciones")
                     self._append("AVISO: " + decision.message)
                     self.open_button.configure(state="normal")
                     if decision.ask_token:
@@ -289,13 +282,15 @@ class LauncherWindow:
                         self.root.after(900, self.open_erp)
                 elif event == "failed":
                     decision = payload
-                    self._set_busy(False, "Operación detenida de forma segura")
+                    self._set_busy(False, decision.message)
+                    self._set_state("error", "Detenido de forma segura")
                     self._append("ERROR: " + decision.message)
                     messagebox.showerror("FutonHUB Launcher", decision.message)
                     if decision.ask_token:
                         self.root.after(200, self._offer_new_token)
                 elif event == "error":
-                    self._set_busy(False, "Operación detenida de forma segura")
+                    self._set_busy(False, str(payload))
+                    self._set_state("error", "Detenido de forma segura")
                     self._append("ERROR: " + str(payload))
                     messagebox.showerror("FutonHUB Launcher", str(payload))
         except queue.Empty:
