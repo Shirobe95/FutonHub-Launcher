@@ -93,17 +93,19 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(info["commit"], commit)
             self.assertEqual((destination / "SOURCE_COMMIT").read_text().strip(), commit)
 
-    def test_preserves_operational_constants(self) -> None:
+    def test_local_constants_are_not_protected_because_supabase_is_the_source_of_truth(self) -> None:
+        from futonhub_auto.deployment import PROTECTED_PATHS
+
+        self.assertNotIn("CalculoCoste/constantes_negocio.json", PROTECTED_PATHS)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            current = root / "current"
-            staged = root / "staged"
-            path = current / "CalculoCoste/constantes_negocio.json"
-            path.parent.mkdir(parents=True)
-            path.write_text('{"local": true}')
+            current, staged = root / "current", root / "staged"
+            old = current / "CalculoCoste/constantes_negocio.json"
+            old.parent.mkdir(parents=True)
+            old.write_text('{"stale": true}')
             staged.mkdir()
             preserve_existing(current, staged)
-            self.assertEqual((staged / "CalculoCoste/constantes_negocio.json").read_text(), '{"local": true}')
+            self.assertFalse((staged / "CalculoCoste/constantes_negocio.json").exists())
 
 class ManagedSupportFilesTests(unittest.TestCase):
     def test_refresh_repairs_entrypoint_without_touching_erp_source(self) -> None:
@@ -123,38 +125,9 @@ class ManagedSupportFilesTests(unittest.TestCase):
             self.assertTrue((app / "health_check.py").is_file())
 
 
-class ConstantsCacheHealthTests(unittest.TestCase):
-    """Supabase manda: el JSON de constantes es una cache local, no un requisito de instalacion."""
-
-    def run_health(self, constants: str | None) -> dict:
-        import json
-        import subprocess
-        import sys
-
+class ConstantsNotRequiredTests(unittest.TestCase):
+    def test_health_check_does_not_look_at_local_constants(self) -> None:
         from futonhub_auto.deployment import HEALTH_CHECK
 
-        with tempfile.TemporaryDirectory() as temp:
-            app = Path(temp)
-            (app / "health_check.py").write_text(HEALTH_CHECK, encoding="utf-8")
-            if constants is not None:
-                target = app / "CalculoCoste" / "constantes_negocio.json"
-                target.parent.mkdir(parents=True)
-                target.write_text(constants, encoding="utf-8")
-            result = subprocess.run(
-                [sys.executable, str(app / "health_check.py")], cwd=temp, capture_output=True, text=True, timeout=120
-            )
-            payload = json.loads(result.stdout.strip().splitlines()[-1])
-            return next(check for check in payload["checks"] if check["name"] == "constants_json")
-
-    def test_missing_constants_cache_is_not_blocking(self) -> None:
-        check = self.run_health(None)
-        self.assertFalse(check["ok"])
-        self.assertFalse(check["blocking"])
-
-    def test_corrupt_constants_cache_still_blocks(self) -> None:
-        check = self.run_health("{ no es json")
-        self.assertFalse(check["ok"])
-        self.assertTrue(check["blocking"])
-
-    def test_valid_constants_cache_passes(self) -> None:
-        self.assertTrue(self.run_health('{"IMPORTE_DESCARGA_MT": 255.0}')["ok"])
+        self.assertNotIn("constantes_negocio", HEALTH_CHECK)
+        self.assertNotIn("constants_json", HEALTH_CHECK)

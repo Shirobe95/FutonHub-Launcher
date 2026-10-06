@@ -15,7 +15,6 @@ PROTECTED_PATHS = (
     "GestorWoo/logs",
     "GestorWoo/backups",
     "GestorWoo/user_config",
-    "CalculoCoste/constantes_negocio.json",
     "CalculoCoste/data.xlsx",
     "logs",
     "backups",
@@ -125,19 +124,6 @@ def main() -> int:
             add("import:" + module, False, f"{type(exc).__name__}: {exc}")
         else:
             add("import:" + module, True)
-
-    # Supabase es la fuente de verdad de las constantes: este JSON es solo una cache local que el ERP regenera.
-    # Si falta no es un error (instalacion nueva); si existe pero esta roto, si lo es.
-    constants = root / "CalculoCoste/constantes_negocio.json"
-    if constants.exists():
-        try:
-            json.loads(constants.read_text(encoding="utf-8"))
-        except Exception as exc:
-            add("constants_json", False, str(exc))
-        else:
-            add("constants_json", True)
-    else:
-        add("constants_json", False, "ausente (cache local; se crea al leer las constantes de Supabase)", blocking=False)
 
     database = root / "GestorWoo/data/gestorwoo.sqlite3"
     if database.exists():

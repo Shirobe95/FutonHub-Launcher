@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.3 (canal test)
+
+- Se eliminan las constantes locales: `CalculoCoste/constantes_negocio.json` ya no se protege entre
+  actualizaciones ni lo comprueba el health check. Las constantes viven solo en Supabase.
+
 ## 0.13.2 (canal test)
 
 - Health check: `CalculoCoste/constantes_negocio.json` pasa a ser opcional. Supabase es la fuente de verdad de
