@@ -69,7 +69,13 @@ class InstallBehaviourTests(unittest.TestCase):
         self.a, self.b = "a" * 40, "b" * 40
         self.zips = {self.a: build_zip(self.root, self.a), self.b: build_zip(self.root, self.b)}
         self.client = FakeClient(self.zips)
-        patcher = patch.multiple(T, prepare_runtime=fake_prepare, ensure_base_python=lambda *a, **k: Path(sys.executable))
+        patcher = patch.multiple(
+            T,
+            prepare_runtime=fake_prepare,
+            ensure_base_python=lambda *a, **k: Path(sys.executable),
+            # Nunca descargar/instalar Python de verdad (en Windows el fallback lo intentaría).
+            install_managed_python=MagicMock(side_effect=ValidationError("sin red (test)")),
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
         self.updater = DirectGitUpdater(self.paths, LauncherConfig(), lambda _t: None, lambda _w, _t: None)
