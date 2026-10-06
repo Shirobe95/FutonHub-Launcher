@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.2 (canal test)
+
+- Health check: `CalculoCoste/constantes_negocio.json` pasa a ser opcional. Supabase es la fuente de verdad de
+  las constantes y ese JSON es solo una cache local que el ERP regenera; si falta (instalación nueva) ya no
+  bloquea la instalación. Si existe pero está corrupto, sigue bloqueando.
+
 ## 0.13.1 (canal test: PALIKO visual)
 
 Incluye todo lo de 0.13.0 (canal de pruebas, lógica funcional) más la capa visual.

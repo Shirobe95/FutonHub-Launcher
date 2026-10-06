@@ -126,6 +126,8 @@ def main() -> int:
         else:
             add("import:" + module, True)
 
+    # Supabase es la fuente de verdad de las constantes: este JSON es solo una cache local que el ERP regenera.
+    # Si falta no es un error (instalacion nueva); si existe pero esta roto, si lo es.
     constants = root / "CalculoCoste/constantes_negocio.json"
     if constants.exists():
         try:
@@ -135,7 +137,7 @@ def main() -> int:
         else:
             add("constants_json", True)
     else:
-        add("constants_json", False, "ausente")
+        add("constants_json", False, "ausente (cache local; se crea al leer las constantes de Supabase)", blocking=False)
 
     database = root / "GestorWoo/data/gestorwoo.sqlite3"
     if database.exists():

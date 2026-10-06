@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 import unittest
@@ -120,3 +121,40 @@ class ManagedSupportFilesTests(unittest.TestCase):
             self.assertIn("pushd", entrypoint)
             self.assertIn("PYTHONUTF8", entrypoint)
             self.assertTrue((app / "health_check.py").is_file())
+
+
+class ConstantsCacheHealthTests(unittest.TestCase):
+    """Supabase manda: el JSON de constantes es una cache local, no un requisito de instalacion."""
+
+    def run_health(self, constants: str | None) -> dict:
+        import json
+        import subprocess
+        import sys
+
+        from futonhub_auto.deployment import HEALTH_CHECK
+
+        with tempfile.TemporaryDirectory() as temp:
+            app = Path(temp)
+            (app / "health_check.py").write_text(HEALTH_CHECK, encoding="utf-8")
+            if constants is not None:
+                target = app / "CalculoCoste" / "constantes_negocio.json"
+                target.parent.mkdir(parents=True)
+                target.write_text(constants, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(app / "health_check.py")], cwd=temp, capture_output=True, text=True, timeout=120
+            )
+            payload = json.loads(result.stdout.strip().splitlines()[-1])
+            return next(check for check in payload["checks"] if check["name"] == "constants_json")
+
+    def test_missing_constants_cache_is_not_blocking(self) -> None:
+        check = self.run_health(None)
+        self.assertFalse(check["ok"])
+        self.assertFalse(check["blocking"])
+
+    def test_corrupt_constants_cache_still_blocks(self) -> None:
+        check = self.run_health("{ no es json")
+        self.assertFalse(check["ok"])
+        self.assertTrue(check["blocking"])
+
+    def test_valid_constants_cache_passes(self) -> None:
+        self.assertTrue(self.run_health('{"IMPORTE_DESCARGA_MT": 255.0}')["ok"])
