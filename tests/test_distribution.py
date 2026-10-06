@@ -45,7 +45,7 @@ class FakeDownloadClient:
 class DistributionTests(unittest.TestCase):
     def test_version_and_build_identity_assets_are_current(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        self.assertEqual(LAUNCHER_VERSION, "0.14.2")
+        self.assertEqual(LAUNCHER_VERSION, "0.14.3")
         build = (root / "build_launcher.bat").read_text(encoding="ascii")
         self.assertIn('--icon "assets\\futonhub.ico"', build)
         self.assertIn('--version-file "assets\\version_info.txt"', build)
@@ -56,7 +56,7 @@ class DistributionTests(unittest.TestCase):
         self.assertIn('certutil -decode "assets\\launcher_icon.png.b64"', build)
         info = (root / "assets/version_info.txt").read_text(encoding="utf-8")
         self.assertIn("FutonHUB Launcher", info)
-        self.assertIn("0.14.2", info)
+        self.assertIn("0.14.3", info)
 
     def test_self_update_defaults_to_enabled(self) -> None:
         self.assertTrue(LauncherConfig().self_update_enabled)

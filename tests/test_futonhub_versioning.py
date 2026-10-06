@@ -184,7 +184,7 @@ class FutonHUBVersioningTests(unittest.TestCase):
 
     def test_main_ui_uses_semantic_version_titles(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        for name in ("gui_compact.py", "gui_paliko.py"):
+        for name in ("gui_compact.py",):  # la pantalla PALIKO muestra la versión en el título «Todo al día»
             source = (root / "futonhub_auto" / name).read_text(encoding="utf-8").casefold()
             self.assertIn('"versión instalada"', source, name)
             self.assertIn('"versión disponible"', source, name)

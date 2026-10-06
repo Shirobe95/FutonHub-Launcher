@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.3 (canal test)
+
+Rediseño funcional del launcher de pruebas (estilo PALIKO), pensado para que Futón Espai no tenga que pensar:
+- **Cargando**: círculo animado siempre que el launcher trabaja (consulta, descarga, restauración).
+- **Todo al día / Actualizado**: pantalla verde con un solo botón «Abrir FutonHUB».
+- **Problemas**: chequeo con una línea por cada cosa que debía estar bien (Internet, acceso GitHub, actualización,
+  FutonHUB instalado, .env) y el botón que la arregla. Un token caducado ya no se esconde abriendo el ERP solo;
+  los problemas pasajeros (red, límite de GitHub) sí abren la versión instalada.
+- **Copiar informe**: informe técnico para soporte (versiones, comprobaciones, actividad), sin el token.
+- Detalles y herramientas de administración (log, GitHub, .env, restaurar, reanudar, desinstalar) siguen detrás de Ctrl+Shift+A.
+- Nuevo módulo `health.py` (sin Tk) con las comprobaciones y el informe, con tests.
+
 ## 0.14.2 (canal test)
 
 El launcher del canal de pruebas usa ahora el estilo PALIKO (oscuro, azul-cian, etiqueta TEST) para distinguirlo
