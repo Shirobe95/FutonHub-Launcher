@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.13.0 (rama test/upgrade-001, sin publicar)
+## 0.13.1 (canal test: PALIKO visual)
+
+Incluye todo lo de 0.13.0 (canal de pruebas, lógica funcional) más la capa visual.
+
+## 0.13.0 (rama test/upgrade-001)
 
 Canal de pruebas (esta rama compila `CHANNEL_NAME = "test"`, ver `futonhub_auto/channel.py`):
 
