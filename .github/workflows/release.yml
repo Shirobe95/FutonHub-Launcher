@@ -32,6 +32,10 @@ jobs:
           if ($env:VERSION -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
             throw "Version must look like 1.2.3 (got '$env:VERSION')"
           }
+          $Channel = python -c "from futonhub_auto.channel import CHANNEL_NAME; print(CHANNEL_NAME)"
+          if ($Channel.Trim() -ne "stable") {
+            throw "CHANNEL_NAME is '$Channel'; a stable release must be built from CHANNEL_NAME = stable"
+          }
           $SourceVersion = python -c "from futonhub_auto import LAUNCHER_VERSION; print(LAUNCHER_VERSION)"
           if ($SourceVersion.Trim() -ne $env:VERSION) {
             throw "Requested version $env:VERSION does not match source version $SourceVersion"
@@ -55,6 +59,16 @@ jobs:
         env:
           CI: "true"
         run: build_launcher.bat
+
+      - name: Smoke test the executable
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $p = Start-Process -FilePath dist/FutonHUB-Launcher.exe -ArgumentList '--selftest','selftest.json' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path selftest.json)) { throw "Executable self-test failed (exit $($p.ExitCode))" }
+          $r = Get-Content selftest.json -Raw | ConvertFrom-Json
+          if (-not $r.ok -or $r.version -ne $env:VERSION -or $r.channel -ne 'stable') { throw "Unexpected self-test result: $($r | ConvertTo-Json -Compress)" }
 
       - name: Verify checksum file matches the executable
         shell: pwsh

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
+from .channel import CHANNEL
+
 
 @dataclass(frozen=True)
 class AppPaths:
@@ -21,7 +23,7 @@ class AppPaths:
     def default(cls) -> "AppPaths":
         local = os.environ.get("LOCALAPPDATA")
         base = Path(local) if local else Path.home() / "AppData" / "Local"
-        return cls.from_root(base / "FutonHUB")
+        return cls.from_root(base / CHANNEL.app_dir_name)
 
     @classmethod
     def from_root(cls, root: Path) -> "AppPaths":

@@ -23,7 +23,7 @@ from .errors import (
 )
 from .github_api import GitHubClient
 from .paths import AppPaths
-from .self_update import download_update, find_update, schedule_update
+from .self_update import download_update, failed_versions, find_update, schedule_update
 from .transaction import DirectGitUpdater
 
 Emit = Callable[[str, Any], None]
@@ -96,7 +96,12 @@ class StartupFlow:
                 "main",
                 require_auth=False,
             )
-            release = find_update(client, LAUNCHER_VERSION)
+            release = find_update(
+                client,
+                LAUNCHER_VERSION,
+                prefix=self.config.release_tag_prefix,
+                allow_prerelease=self.config.release_allow_prerelease,
+            )
         except LauncherError as exc:
             self.emit(
                 "status",
@@ -104,6 +109,13 @@ class StartupFlow:
             )
             return False
         if release is None:
+            return False
+        if release.version in failed_versions(self.paths):
+            self.emit(
+                "status",
+                f"El launcher {release.version} no llegó a arrancar en este equipo y se revirtió; "
+                "se omite hasta que haya una versión nueva.",
+            )
             return False
         self.emit("status", f"Nueva versión del launcher: {release.version}")
         try:

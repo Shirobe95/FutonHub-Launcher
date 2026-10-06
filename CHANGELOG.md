@@ -2,7 +2,21 @@
 
 ## 0.13.0 (rama test/upgrade-001, sin publicar)
 
-Funcional (sin cambios visuales todavía):
+Canal de pruebas (esta rama compila `CHANNEL_NAME = "test"`, ver `futonhub_auto/channel.py`):
+
+- Sigue la rama `test/upgrade-001` del ERP, no la de producción.
+- Se instala aparte (`%LOCALAPPDATA%\\FutonHUB-Test`), con su propio token (reutiliza el del
+  launcher estable si existe, solo lectura), accesos directos «FutonHUB (Test)», entrada de
+  desinstalación propia y distintivo TEST en la ventana. Puede convivir con el launcher real.
+- Se autoactualiza solo con releases `launcher-test-vX.Y.Z` (prerelease). Los launchers estables
+  ignoran esos tags, y este ignora los estables. `release-test.yml` publica uno por push a la rama.
+- Autoactualización con verificación: el script espera a que el EXE nuevo confirme que arrancó
+  (`State/launcher_ok.json`); si no, restaura el anterior, lo reabre y marca esa versión como
+  fallida para no reintentarla. `--selftest` permite al CI probar el EXE compilado antes de publicar.
+- Primera instalación sin ERP: se instala sola; si el Python del sistema no tiene tkinter/venv
+  o falla la validación, usa el Python administrado en vez de dar error.
+
+Funcional:
 
 - GitHub: errores diferenciados (token 401, permisos 403, límite de uso 403/429, recurso 404,
   caídas 5xx/red). Reintentos con espera para fallos transitorios. El token se limpia

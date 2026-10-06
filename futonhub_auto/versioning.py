@@ -15,14 +15,14 @@ def parse_version(value: str) -> tuple[int, int, int]:
     return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
 
 
-def parse_release_tag(tag: str) -> str | None:
+def parse_release_tag(tag: str, prefix: str = LAUNCHER_TAG_PREFIX) -> str | None:
     """Devuelve ``X.Y.Z`` para tags ``launcher-vX.Y.Z`` estables; ``None`` si no aplica.
 
     Los tags con sufijo (``-rc1``, ``+meta``) no se consideran versiones estables.
     """
-    if not tag.startswith(LAUNCHER_TAG_PREFIX):
+    if not tag.startswith(prefix):
         return None
-    version = tag[len(LAUNCHER_TAG_PREFIX):]
+    version = tag[len(prefix):]
     return version if _STRICT_RE.fullmatch(version) else None
 
 

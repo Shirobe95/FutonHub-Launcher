@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .channel import CHANNEL
+
 
 CONFIG_SCHEMA = 2
 
@@ -23,6 +25,7 @@ MANAGED_FIELDS = (
     "python_version",
     "python_installer_url",
     "python_installer_sha256",
+    "release_tag_prefix",
 )
 
 
@@ -30,13 +33,15 @@ MANAGED_FIELDS = (
 class LauncherConfig:
     owner: str = "Shirobe95"
     repository: str = "FutonEspaiHUB"
-    branch: str = "refactor/modularizacion-v1"
-    credential_target: str = "FutonHUB/GitHubReadOnly"
+    branch: str = CHANNEL.erp_branch
+    credential_target: str = CHANNEL.credential_target
     auto_open_erp: bool = True
     self_update_enabled: bool = True
     launcher_owner: str = "Shirobe95"
     launcher_repository: str = "FutonHub-Launcher"
     backup_retention: int = 3
+    release_tag_prefix: str = CHANNEL.release_tag_prefix
+    release_allow_prerelease: bool = CHANNEL.allow_prerelease
     python_version: str = "3.13.14"
     python_installer_url: str = (
         "https://www.python.org/ftp/python/3.13.14/python-3.13.14-amd64.exe"

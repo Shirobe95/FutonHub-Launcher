@@ -11,6 +11,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
 
 from . import LAUNCHER_VERSION
+from .channel import CHANNEL, STABLE
 from .config import LauncherConfig
 from .credentials import CredentialStore, WindowsCredentialStore
 from .desktop import register_windows_integration, launch_erp, read_erp_log_tail
@@ -49,7 +50,8 @@ class LauncherWindow:
         self.root.after(300, self.start_automatic)
 
     def _build(self) -> None:
-        self.root.title(f"FutonHUB Launcher {LAUNCHER_VERSION}")
+        badge = f" [{CHANNEL.window_badge}]" if CHANNEL.window_badge else ""
+        self.root.title(f"FutonHUB Launcher {LAUNCHER_VERSION}{badge}")
         self.root.geometry("790x560")
         self.root.minsize(680, 480)
         try:
@@ -67,7 +69,7 @@ class LauncherWindow:
 
         ttk.Label(
             outer,
-            text="FutonHUB Launcher",
+            text="FutonHUB Launcher" + (f"  ·  {CHANNEL.window_badge}" if CHANNEL.window_badge else ""),
             font=("Segoe UI", 20, "bold"),
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(
@@ -302,7 +304,13 @@ class LauncherWindow:
 
     def _token(self) -> str | None:
         try:
-            return self.store.read(self.config.credential_target)
+            token = self.store.read(self.config.credential_target)
+            if not token and self.config.credential_target != STABLE.credential_target:
+                # Canal de pruebas: reutiliza (solo lectura) el token del launcher estable si existe.
+                token = self.store.read(STABLE.credential_target)
+                if token:
+                    self._append("Se reutiliza el token de solo lectura del launcher estable.")
+            return token
         except LauncherError as exc:
             self._append(f"No se pudo leer el token guardado: {exc}")
             return None

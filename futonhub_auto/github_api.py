@@ -18,7 +18,7 @@ from .errors import (
     RateLimitError,
     RemoteNotFoundError,
 )
-from .versioning import parse_version, parse_release_tag
+from .versioning import LAUNCHER_TAG_PREFIX, parse_version, parse_release_tag
 
 
 Progress = Callable[[int, int | None], None]
@@ -280,17 +280,21 @@ class GitHubClient:
             minimum_size=1024,
         )
 
-    def latest_launcher_release(self) -> LauncherRelease | None:
+    def latest_launcher_release(
+        self,
+        prefix: str = LAUNCHER_TAG_PREFIX,
+        allow_prerelease: bool = False,
+    ) -> LauncherRelease | None:
         url = f"{self.API}/repos/{self.owner}/{self.repository}/releases?per_page=30"
         raw = self._json(url)
         if not isinstance(raw, list):
             raise DownloadError("GitHub devolvió un listado de releases inválido")
         best: LauncherRelease | None = None
         for release in raw:
-            if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+            if not isinstance(release, dict) or release.get("draft") or (release.get("prerelease") and not allow_prerelease):
                 continue
             tag = str(release.get("tag_name") or "")
-            version = parse_release_tag(tag)
+            version = parse_release_tag(tag, prefix)
             if version is None:
                 continue
             assets = release.get("assets") if isinstance(release.get("assets"), list) else []

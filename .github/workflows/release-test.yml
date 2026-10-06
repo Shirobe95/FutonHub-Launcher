@@ -1,0 +1,107 @@
+name: Publish TEST launcher prerelease
+
+# Cada push a la rama de pruebas compila, prueba y publica un PRERELEASE `launcher-test-vX.Y.Z`.
+# Los launchers estables solo siguen `launcher-vX.Y.Z` no prerelease, así que nunca lo ven.
+# Para publicar una nueva build de pruebas hay que subir LAUNCHER_VERSION (si el tag ya existe se omite).
+
+on:
+  push:
+    branches: ['test/upgrade-001']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-test
+  cancel-in-progress: false
+
+jobs:
+  release-test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements_build.txt
+
+      - name: Read version and verify channel
+        id: meta
+        shell: pwsh
+        run: |
+          $Channel = (python -c "from futonhub_auto.channel import CHANNEL_NAME; print(CHANNEL_NAME)").Trim()
+          if ($Channel -ne "test") { throw "CHANNEL_NAME is '$Channel'; this workflow only publishes the test channel" }
+          $Version = (python -c "from futonhub_auto import LAUNCHER_VERSION; print(LAUNCHER_VERSION)").Trim()
+          if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid version '$Version'" }
+          $Info = Get-Content assets/version_info.txt -Raw
+          if ($Info -notmatch "ProductVersion', '$([regex]::Escape($Version))'") { throw "assets/version_info.txt does not declare version $Version" }
+          "version=$Version" >> $env:GITHUB_OUTPUT
+
+      - name: Skip if this test version is already published
+        id: exists
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release view "launcher-test-v$env:VERSION" --repo $env:REPO *> $null
+          if ($LASTEXITCODE -eq 0) { "published=true" >> $env:GITHUB_OUTPUT; Write-Host "launcher-test-v$env:VERSION already exists; bump LAUNCHER_VERSION to publish a new test build." }
+          else { "published=false" >> $env:GITHUB_OUTPUT }
+          exit 0
+
+      - name: Install build dependencies
+        if: steps.exists.outputs.published == 'false'
+        run: python -m pip install --disable-pip-version-check -r requirements_build.txt
+
+      - name: Run tests
+        if: steps.exists.outputs.published == 'false'
+        run: python -m unittest discover -s tests -v
+
+      - name: Build Windows executable
+        if: steps.exists.outputs.published == 'false'
+        shell: cmd
+        env:
+          CI: "true"
+        run: build_launcher.bat
+
+      - name: Smoke test the executable
+        if: steps.exists.outputs.published == 'false'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          $p = Start-Process -FilePath dist/FutonHUB-Launcher.exe -ArgumentList '--selftest','selftest.json' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path selftest.json)) { throw "Executable self-test failed (exit $($p.ExitCode))" }
+          $r = Get-Content selftest.json -Raw | ConvertFrom-Json
+          if (-not $r.ok -or $r.version -ne $env:VERSION -or $r.channel -ne 'test') { throw "Unexpected self-test result: $($r | ConvertTo-Json -Compress)" }
+
+      - name: Verify checksum file matches the executable
+        if: steps.exists.outputs.published == 'false'
+        shell: pwsh
+        run: |
+          $Expected = (Get-Content dist/FutonHUB-Launcher.exe.sha256 -Raw).Trim().Split(' ')[0].ToLower()
+          $Actual = (Get-FileHash dist/FutonHUB-Launcher.exe -Algorithm SHA256).Hash.ToLower()
+          if ($Expected -ne $Actual) { throw "Checksum mismatch: $Expected vs $Actual" }
+
+      - name: Publish prerelease
+        if: steps.exists.outputs.published == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          gh release create "launcher-test-v$env:VERSION" `
+            "dist/FutonHUB-Launcher.exe" `
+            "dist/FutonHUB-Launcher.exe.sha256" `
+            --repo $env:REPO `
+            --target $env:SHA `
+            --prerelease `
+            --title "FutonHUB Launcher TEST $env:VERSION" `
+            --notes "Build de pruebas del canal test (rama test/upgrade-001). No afecta al launcher estable."

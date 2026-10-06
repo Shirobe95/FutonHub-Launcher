@@ -147,6 +147,36 @@ class DirectGitUpdater:
             output=(result.stdout or "")[:12000],
         )
 
+    def _prepare_validated_runtime(self, staged: Path):
+        """Prepara el entorno y valida la copia; si el Python del sistema no sirve, usa el administrado.
+
+        Cubre la primera instalación en un PC cuyo Python no tiene tkinter/venv o rompe una
+        dependencia: en vez de fallar, se instala y usa el Python 3.13 gestionado por el launcher.
+        """
+        base_python = ensure_base_python(self.paths.runtime, self.config, self.status, self.progress)
+        managed_python = self.paths.runtime / "Python313/python.exe"
+
+        def attempt(python: Path):
+            runtime = prepare_runtime(staged, self.paths.runtime, python, self.status)
+            self.status("Validando la instalación preparada…")
+            self._health(staged, runtime.python)
+            return runtime
+
+        try:
+            return attempt(base_python)
+        except ValidationError:
+            if base_python.resolve() == managed_python.resolve():
+                raise
+            self.status(
+                "El Python existente no pudo preparar FutonHUB; "
+                "probando con el runtime administrado…"
+            )
+            requirements_hash = sha256_file(staged / "requirements_erp.txt")
+            for stale in (self.paths.runtime / "venvs").glob(requirements_hash[:16] + "*"):
+                shutil.rmtree(stale, ignore_errors=True)
+            managed = install_managed_python(self.paths.runtime, self.config, self.status, self.progress)
+            return attempt(managed)
+
     def _backup(self, commit: str) -> Path | None:
         if not self.paths.app.is_dir():
             return None
@@ -262,44 +292,7 @@ class DirectGitUpdater:
                 archive_sha256=archive_hash,
             )
             preserved = preserve_existing(self.paths.app, staged)
-            base_python = ensure_base_python(
-                self.paths.runtime,
-                self.config,
-                self.status,
-                self.progress,
-            )
-            try:
-                runtime = prepare_runtime(
-                    staged,
-                    self.paths.runtime,
-                    base_python,
-                    self.status,
-                )
-            except ValidationError:
-                managed_python = self.paths.runtime / "Python313/python.exe"
-                if base_python.resolve() == managed_python.resolve():
-                    raise
-                self.status(
-                    "El Python existente no pudo preparar FutonHUB; "
-                    "probando con el runtime administrado…"
-                )
-                requirements_hash = sha256_file(staged / "requirements_erp.txt")
-                for stale in (self.paths.runtime / "venvs").glob(requirements_hash[:16] + "*"):
-                    shutil.rmtree(stale, ignore_errors=True)
-                managed_python = install_managed_python(
-                    self.paths.runtime,
-                    self.config,
-                    self.status,
-                    self.progress,
-                )
-                runtime = prepare_runtime(
-                    staged,
-                    self.paths.runtime,
-                    managed_python,
-                    self.status,
-                )
-            self.status("Validando la instalación preparada…")
-            self._health(staged, runtime.python)
+            runtime = self._prepare_validated_runtime(staged)
             self._write_journal(
                 "validated",
                 commit=commit.sha,

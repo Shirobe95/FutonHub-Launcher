@@ -84,7 +84,7 @@ def _valid_python(command: Sequence[str]) -> Path | None:
                 *command,
                 "-c",
                 (
-                    "import sys;print(sys.executable);"
+                    "import sys, tkinter, venv, ensurepip;print(sys.executable);"
                     "raise SystemExit(0 if sys.version_info >= (3,11) else 1)"
                 ),
             ],

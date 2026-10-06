@@ -10,7 +10,9 @@ import subprocess
 import sys
 from typing import Iterator
 
+from .channel import CHANNEL
 from .errors import ValidationError
+from .pshell import quote
 
 
 IS_WINDOWS = os.name == "nt"
@@ -219,7 +221,7 @@ def create_desktop_shortcut(executable: Path) -> None:
     create_shortcuts(executable)
 
 UNINSTALL_REGISTRY_KEY = (
-    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\FutonHUB"
+    "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + CHANNEL.registry_key
 )
 
 
@@ -227,20 +229,21 @@ def create_shortcuts(executable: Path) -> None:
     """Create Desktop and Start Menu shortcuts for the installed launcher."""
     if not IS_WINDOWS:
         return
-    safe_executable = str(executable).replace("'", "''")
-    safe_working = str(executable.parent).replace("'", "''")
+    safe_executable = quote(executable)
+    safe_working = quote(executable.parent)
+    shortcut = CHANNEL.shortcut_name + ".lnk"
     script = (
         "$w=New-Object -ComObject WScript.Shell;"
         "$targets=@("
-        "(Join-Path ([Environment]::GetFolderPath('Desktop')) 'FutonHUB.lnk'),"
-        "(Join-Path ([Environment]::GetFolderPath('Programs')) 'FutonHUB.lnk')"
+        "(Join-Path ([Environment]::GetFolderPath('Desktop')) " + quote(shortcut) + "),"
+        "(Join-Path ([Environment]::GetFolderPath('Programs')) " + quote(shortcut) + ")"
         ");"
         "foreach($shortcut in $targets){"
         "$s=$w.CreateShortcut($shortcut);"
-        "$s.TargetPath='" + safe_executable + "';"
-        "$s.WorkingDirectory='" + safe_working + "';"
-        "$s.IconLocation='" + safe_executable + ",0';"
-        "$s.Description='Instalar, actualizar y abrir FutonHUB';"
+        "$s.TargetPath=" + safe_executable + ";"
+        "$s.WorkingDirectory=" + safe_working + ";"
+        "$s.IconLocation=" + quote(f"{executable},0") + ";"
+        "$s.Description=" + quote(f"Instalar, actualizar y abrir {CHANNEL.display_name}") + ";"
         "$s.Save()}"
     )
     subprocess.run(
@@ -267,7 +270,7 @@ def register_uninstall_entry(executable: Path, version: str) -> None:
         return
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, UNINSTALL_REGISTRY_KEY) as key:
         values = {
-            "DisplayName": "FutonHUB",
+            "DisplayName": CHANNEL.display_name,
             "DisplayVersion": version,
             "Publisher": "Futon Espai",
             "InstallLocation": str(executable.parent.parent),

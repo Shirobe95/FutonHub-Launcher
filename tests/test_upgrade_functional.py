@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
 from futonhub_auto import archive, flow
+from futonhub_auto.channel import CHANNEL
 from futonhub_auto.config import LauncherConfig
 from futonhub_auto.errors import (
     AlreadyRunningError,
@@ -67,7 +68,7 @@ class ConfigTests(unittest.TestCase):
             path = Path(temp) / "launcher.json"
             path.write_text("{ corrupt", encoding="utf-8")
             config = LauncherConfig.load_or_create(path)
-            self.assertEqual(config.branch, "refactor/modularizacion-v1")
+            self.assertEqual(config.branch, CHANNEL.erp_branch)
             self.assertTrue(config.notices)
             self.assertTrue(list(Path(temp).glob("launcher.json.corrupt-*")))
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["schema"], 2)
@@ -89,7 +90,7 @@ class ConfigTests(unittest.TestCase):
                 encoding="utf-8",
             )
             config = LauncherConfig.load_or_create(path)
-            self.assertEqual(config.branch, "refactor/modularizacion-v1")
+            self.assertEqual(config.branch, CHANNEL.erp_branch)
             self.assertEqual(config.python_version, "3.13.14")
             self.assertFalse(config.auto_open_erp)
             self.assertEqual(config.backup_retention, 5)

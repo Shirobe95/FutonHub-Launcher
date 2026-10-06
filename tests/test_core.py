@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 import unittest
 
+from futonhub_auto.channel import CHANNEL
 from futonhub_auto.config import LauncherConfig
 from futonhub_auto.credentials import MemoryCredentialStore
 from futonhub_auto.logging_utils import redact
@@ -32,7 +33,7 @@ class CoreTests(unittest.TestCase):
             path = Path(temp) / "launcher.json"
             config = LauncherConfig.load_or_create(path)
             raw = path.read_text(encoding="utf-8")
-            self.assertEqual(config.branch, "refactor/modularizacion-v1")
+            self.assertEqual(config.branch, CHANNEL.erp_branch)
             self.assertNotIn("token", raw.casefold())
 
     def test_memory_credentials(self) -> None:
