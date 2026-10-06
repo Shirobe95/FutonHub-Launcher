@@ -3,11 +3,23 @@ class LauncherError(RuntimeError):
 
 
 class AuthenticationError(LauncherError):
-    pass
+    """El token de GitHub falta, es inválido, ha caducado o no tiene permisos."""
 
 
 class DownloadError(LauncherError):
-    pass
+    """Fallo de red o de GitHub que puede ser transitorio."""
+
+
+class RateLimitError(DownloadError):
+    """GitHub limitó las peticiones (HTTP 429 o 403 con límite agotado)."""
+
+    def __init__(self, message: str, retry_after: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class RemoteNotFoundError(LauncherError):
+    """El repositorio, la rama o el recurso no existen o el token no los ve."""
 
 
 class ValidationError(LauncherError):
@@ -16,3 +28,7 @@ class ValidationError(LauncherError):
 
 class UpdateError(LauncherError):
     pass
+
+
+class AlreadyRunningError(LauncherError):
+    """Otra instancia del launcher está usando la instalación."""

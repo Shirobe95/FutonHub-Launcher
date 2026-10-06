@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shutil
@@ -11,8 +12,9 @@ from typing import Callable
 from .archive import safe_extract_snapshot
 from .config import LauncherConfig
 from .deployment import create_runtime, preserve_existing, refresh_managed_files
-from .errors import UpdateError, ValidationError
+from .errors import AlreadyRunningError, UpdateError, ValidationError
 from .github_api import CommitInfo, GitHubClient
+from .locking import update_lock
 from .logging_utils import AuditLogger
 from .paths import AppPaths
 from .versioning import (
@@ -89,6 +91,14 @@ class DirectGitUpdater:
         temporary.replace(self.journal)
 
     def recover(self) -> str | None:
+        """Repara una actualización interrumpida. Si otra instancia está actualizando, no toca nada."""
+        try:
+            with update_lock(self.paths.state):
+                return self._recover_locked()
+        except AlreadyRunningError:
+            return None
+
+    def _recover_locked(self) -> str | None:
         previous = self.paths.app.with_name("App.__previous__")
         if not self.journal.exists() and not previous.exists():
             return None
@@ -131,14 +141,21 @@ class DirectGitUpdater:
         return message
 
     def _health(self, app: Path, python: Path) -> None:
-        result = subprocess.run(
-            [str(python), str(app / "health_check.py")],
-            cwd=str(app),
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [str(python), str(app / "health_check.py")],
+                cwd=str(app),
+                capture_output=True,
+                text=True,
+                timeout=240,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ValidationError(
+                "Health check agotó el tiempo (240 s); puede ser un antivirus analizando Python."
+            ) from exc
+        except OSError as exc:
+            raise ValidationError(f"No se pudo ejecutar el health check: {exc}") from exc
         if result.returncode != 0:
             raise ValidationError(
                 "Health check falló: "
@@ -149,6 +166,36 @@ class DirectGitUpdater:
             app=str(app),
             output=(result.stdout or "")[:12000],
         )
+
+    def _prepare_validated_runtime(self, staged: Path):
+        """Prepara el entorno y valida la copia; si el Python del sistema no sirve, usa el administrado.
+
+        Cubre la primera instalación en un PC cuyo Python no tiene tkinter/venv o rompe una
+        dependencia: en vez de fallar, se instala y usa el Python 3.13 gestionado por el launcher.
+        """
+        base_python = ensure_base_python(self.paths.runtime, self.config, self.status, self.progress)
+        managed_python = self.paths.runtime / "Python313/python.exe"
+
+        def attempt(python: Path):
+            runtime = prepare_runtime(staged, self.paths.runtime, python, self.status)
+            self.status("Validando la instalación preparada…")
+            self._health(staged, runtime.python)
+            return runtime
+
+        try:
+            return attempt(base_python)
+        except ValidationError:
+            if base_python.resolve() == managed_python.resolve():
+                raise
+            self.status(
+                "El Python existente no pudo preparar FutonHUB; "
+                "probando con el runtime administrado…"
+            )
+            requirements_hash = sha256_file(staged / "requirements_erp.txt")
+            for stale in (self.paths.runtime / "venvs").glob(requirements_hash[:16] + "*"):
+                shutil.rmtree(stale, ignore_errors=True)
+            managed = install_managed_python(self.paths.runtime, self.config, self.status, self.progress)
+            return attempt(managed)
 
     def _backup(self, commit: str) -> Path | None:
         if not self.paths.app.is_dir():
@@ -189,6 +236,15 @@ class DirectGitUpdater:
         return runtime.is_file()
 
     def install_commit(
+        self,
+        client: GitHubClient,
+        commit: CommitInfo,
+    ) -> UpdateOutcome:
+        """Instala ``commit`` bajo un bloqueo entre procesos (una sola actualización a la vez)."""
+        with update_lock(self.paths.state):
+            return self._install_commit_locked(client, commit)
+
+    def _install_commit_locked(
         self,
         client: GitHubClient,
         commit: CommitInfo,
@@ -263,46 +319,7 @@ class DirectGitUpdater:
                 archive_sha256=archive_hash,
             )
             preserved = preserve_existing(self.paths.app, staged)
-            base_python = ensure_base_python(
-                self.paths.runtime,
-                self.config,
-                self.status,
-                self.progress,
-            )
-            try:
-                runtime = prepare_runtime(
-                    staged,
-                    self.paths.runtime,
-                    base_python,
-                    self.status,
-                )
-            except ValidationError:
-                managed_python = self.paths.runtime / "Python313/python.exe"
-                if base_python.resolve() == managed_python.resolve():
-                    raise
-                self.status(
-                    "El Python existente no pudo preparar FutonHUB; "
-                    "probando con el runtime administrado…"
-                )
-                requirements_hash = sha256_file(staged / "requirements_erp.txt")
-                shutil.rmtree(
-                    self.paths.runtime / "venvs" / requirements_hash[:16],
-                    ignore_errors=True,
-                )
-                managed_python = install_managed_python(
-                    self.paths.runtime,
-                    self.config,
-                    self.status,
-                    self.progress,
-                )
-                runtime = prepare_runtime(
-                    staged,
-                    self.paths.runtime,
-                    managed_python,
-                    self.status,
-                )
-            self.status("Validando la instalación preparada…")
-            self._health(staged, runtime.python)
+            runtime = self._prepare_validated_runtime(staged)
             self._write_journal(
                 "validated",
                 commit=commit.sha,
@@ -372,3 +389,115 @@ class DirectGitUpdater:
             if isinstance(exc, (ValidationError, UpdateError)):
                 raise
             raise UpdateError(str(exc)) from exc
+
+
+    # ------------------------------------------------------------------ pin / restore
+    @property
+    def pin_path(self) -> Path:
+        return self.paths.state / "pin.json"
+
+    def pinned_commit(self) -> str:
+        try:
+            value = json.loads(self.pin_path.read_text(encoding="utf-8")).get("commit")
+        except (OSError, ValueError, AttributeError):
+            return ""
+        return value if isinstance(value, str) and len(value) == 40 else ""
+
+    def set_pin(self, commit: str, reason: str) -> None:
+        self.pin_path.parent.mkdir(parents=True, exist_ok=True)
+        self.pin_path.write_text(
+            json.dumps(
+                {
+                    "commit": commit,
+                    "reason": reason,
+                    "pinned_at": datetime.now(timezone.utc).isoformat(),
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def clear_pin(self) -> None:
+        self.pin_path.unlink(missing_ok=True)
+
+    def list_backups(self) -> list[tuple[str, str, float]]:
+        """Copias de seguridad válidas: (nombre, commit completo, mtime), la más reciente primero."""
+        found: list[tuple[str, str, float]] = []
+        if not self.paths.rollback.is_dir():
+            return found
+        for item in self.paths.rollback.iterdir():
+            commit_file = item / "SOURCE_COMMIT"
+            if not item.is_dir() or not commit_file.is_file():
+                continue
+            try:
+                commit = commit_file.read_text(encoding="ascii").strip()
+            except (OSError, UnicodeError):
+                continue
+            if len(commit) == 40:
+                found.append((item.name, commit, item.stat().st_mtime))
+        return sorted(found, key=lambda row: row[2], reverse=True)
+
+    def restore_backup(self, name: str) -> UpdateOutcome:
+        """Restaura una copia de ``Rollback/`` conservando .env y datos actuales, y fija la versión."""
+        source = self.paths.rollback / name
+        if Path(name).name != name or not source.is_dir():
+            raise ValidationError("La copia de seguridad indicada no existe")
+        with update_lock(self.paths.state):
+            previous_commit = self.local_commit()
+            restored_commit = (source / "SOURCE_COMMIT").read_text(encoding="ascii").strip()
+            if len(restored_commit) != 40:
+                raise ValidationError("La copia de seguridad no tiene un commit válido")
+            runtime_file = source / "runtime_python.txt"
+            try:
+                runtime = Path(runtime_file.read_text(encoding="utf-8").strip())
+            except OSError as exc:
+                raise ValidationError("La copia no incluye el entorno Python de la época") from exc
+            if not runtime.is_file():
+                raise ValidationError(
+                    "El entorno Python de esa copia ya no existe; se necesita una actualización normal"
+                )
+            self.paths.ensure()
+            temporary_root = Path(tempfile.mkdtemp(prefix="restore-", dir=self.paths.staging))
+            staged = temporary_root / "app"
+            previous_dir = self.paths.app.with_name("App.__previous__")
+            try:
+                self._write_journal("extracting", commit=restored_commit, temporary_root=str(temporary_root))
+                shutil.copytree(source, staged)
+                preserve_existing(self.paths.app, staged)
+                refresh_managed_files(staged)
+                self._health(staged, runtime)
+                self._write_journal("validated", commit=restored_commit, temporary_root=str(temporary_root))
+                self._backup(previous_commit)
+                shutil.rmtree(previous_dir, ignore_errors=True)
+                if self.paths.app.exists():
+                    self.paths.app.rename(previous_dir)
+                self._write_journal("swapped", commit=restored_commit, temporary_root=str(temporary_root))
+                staged.rename(self.paths.app)
+                self._health(self.paths.app, runtime)
+                self._write_journal("postvalidated", commit=restored_commit, temporary_root=str(temporary_root))
+                shutil.rmtree(previous_dir, ignore_errors=True)
+                shutil.rmtree(temporary_root, ignore_errors=True)
+                self.journal.unlink(missing_ok=True)
+            except Exception as exc:
+                if previous_dir.exists():
+                    failed = self.paths.app.with_name("App.__failed__")
+                    shutil.rmtree(failed, ignore_errors=True)
+                    if self.paths.app.exists():
+                        self.paths.app.rename(failed)
+                    previous_dir.rename(self.paths.app)
+                    shutil.rmtree(failed, ignore_errors=True)
+                shutil.rmtree(temporary_root, ignore_errors=True)
+                self.journal.unlink(missing_ok=True)
+                self.audit.write("restore_failed", backup=name, error=str(exc))
+                if isinstance(exc, (ValidationError, UpdateError)):
+                    raise
+                raise UpdateError(str(exc)) from exc
+            self.set_pin(restored_commit, f"Restaurado manualmente desde {name}")
+            self.audit.write("restore_succeeded", backup=name, previous=previous_commit, current=restored_commit)
+            return UpdateOutcome(
+                True,
+                restored_commit,
+                previous_commit,
+                f"Versión restaurada al commit {restored_commit[:12]}. Las actualizaciones automáticas quedan en pausa.",
+            )

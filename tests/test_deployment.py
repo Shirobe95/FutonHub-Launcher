@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 import unittest
@@ -115,17 +116,19 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(info["installed_version"], "0.3.0")
             self.assertEqual((destination / "VERSION").read_text().strip(), "0.3.0")
 
-    def test_preserves_operational_constants(self) -> None:
+    def test_local_constants_are_not_protected_because_supabase_is_the_source_of_truth(self) -> None:
+        from futonhub_auto.deployment import PROTECTED_PATHS
+
+        self.assertNotIn("CalculoCoste/constantes_negocio.json", PROTECTED_PATHS)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            current = root / "current"
-            staged = root / "staged"
-            path = current / "CalculoCoste/constantes_negocio.json"
-            path.parent.mkdir(parents=True)
-            path.write_text('{"local": true}')
+            current, staged = root / "current", root / "staged"
+            old = current / "CalculoCoste/constantes_negocio.json"
+            old.parent.mkdir(parents=True)
+            old.write_text('{"stale": true}')
             staged.mkdir()
             preserve_existing(current, staged)
-            self.assertEqual((staged / "CalculoCoste/constantes_negocio.json").read_text(), '{"local": true}')
+            self.assertFalse((staged / "CalculoCoste/constantes_negocio.json").exists())
 
 class ManagedSupportFilesTests(unittest.TestCase):
     def test_refresh_repairs_entrypoint_without_touching_erp_source(self) -> None:
@@ -143,3 +146,11 @@ class ManagedSupportFilesTests(unittest.TestCase):
             self.assertIn("pushd", entrypoint)
             self.assertIn("PYTHONUTF8", entrypoint)
             self.assertTrue((app / "health_check.py").is_file())
+
+
+class ConstantsNotRequiredTests(unittest.TestCase):
+    def test_health_check_does_not_look_at_local_constants(self) -> None:
+        from futonhub_auto.deployment import HEALTH_CHECK
+
+        self.assertNotIn("constantes_negocio", HEALTH_CHECK)
+        self.assertNotIn("constants_json", HEALTH_CHECK)

@@ -5,9 +5,11 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+from .channel import CHANNEL
 from .credentials import CredentialStore
 from .errors import ValidationError
 from .paths import AppPaths
+from .pshell import quote
 
 
 IS_WINDOWS = os.name == "nt"
@@ -16,21 +18,21 @@ CREATE_NO_WINDOW = 0x08000000 if IS_WINDOWS else 0
 
 def desktop_shortcut_path() -> Path:
     desktop = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
-    return desktop / "FutonHUB.lnk"
+    return desktop / (CHANNEL.shortcut_name + ".lnk")
 
 
 def build_cleanup_script(paths: AppPaths, *, pid: int) -> str:
-    root = str(paths.root).replace("'", "''")
+    root = quote(paths.root)
     return "\n".join(
         [
             "$ErrorActionPreference = 'SilentlyContinue'",
             f"$LauncherPid = {int(pid)}",
-            f"$InstallRoot = '{root}'",
+            f"$InstallRoot = {root}",
             "$Desktop = [Environment]::GetFolderPath('Desktop')",
             "$Programs = [Environment]::GetFolderPath('Programs')",
-            "$DesktopShortcut = Join-Path $Desktop 'FutonHUB.lnk'",
-            "$StartShortcut = Join-Path $Programs 'FutonHUB.lnk'",
-            "$UninstallKey = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\FutonHUB'",
+            f"$DesktopShortcut = Join-Path $Desktop {quote(CHANNEL.shortcut_name + '.lnk')}",
+            f"$StartShortcut = Join-Path $Programs {quote(CHANNEL.shortcut_name + '.lnk')}",
+            "$UninstallKey = " + quote("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + CHANNEL.registry_key),
             "Wait-Process -Id $LauncherPid -ErrorAction SilentlyContinue",
             "Start-Sleep -Milliseconds 700",
             "Remove-Item -LiteralPath $DesktopShortcut -Force -ErrorAction SilentlyContinue",

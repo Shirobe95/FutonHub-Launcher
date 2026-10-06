@@ -12,7 +12,10 @@ from .versioning import read_installed_futonhub_version
 PROTECTED_PATHS = (
     "GestorWoo/.env",
     "GestorWoo/data",
-    "CalculoCoste/constantes_negocio.json",
+    "GestorWoo/exports",
+    "GestorWoo/logs",
+    "GestorWoo/backups",
+    "GestorWoo/user_config",
     "CalculoCoste/data.xlsx",
     "logs",
     "backups",
@@ -122,17 +125,6 @@ def main() -> int:
             add("import:" + module, False, f"{type(exc).__name__}: {exc}")
         else:
             add("import:" + module, True)
-
-    constants = root / "CalculoCoste/constantes_negocio.json"
-    if constants.exists():
-        try:
-            json.loads(constants.read_text(encoding="utf-8"))
-        except Exception as exc:
-            add("constants_json", False, str(exc))
-        else:
-            add("constants_json", True)
-    else:
-        add("constants_json", False, "ausente")
 
     database = root / "GestorWoo/data/gestorwoo.sqlite3"
     if database.exists():

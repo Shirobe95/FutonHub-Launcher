@@ -9,7 +9,9 @@ import tomllib
 from typing import Callable, Protocol
 
 
-_VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)([-+][0-9A-Za-z.-]+)?$")
+_VERSION_RE = re.compile(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)([-+][0-9A-Za-z.-]+)?$", re.ASCII)
+_STRICT_RE = re.compile(r"^([0-9]+)\.([0-9]+)\.([0-9]+)$", re.ASCII)
+LAUNCHER_TAG_PREFIX = "launcher-v"
 _VERSION_ASSIGNMENT = "__version__"
 _LOCAL_VERSION_SOURCES: tuple[tuple[str, str], ...] = (
     ("GestorWoo/pyproject.toml", "toml"),
@@ -33,7 +35,7 @@ def parse_version(value: str) -> tuple[int, int, int]:
     match = _VERSION_RE.fullmatch((value or "").strip())
     if not match:
         raise ValueError(f"Versión inválida: {value!r}")
-    return tuple(int(part) for part in match.groups()[:3])
+    return tuple(int(part) for part in match.groups()[:3])  # type: ignore[return-value]
 
 
 def canonical_version(value: str | None) -> str | None:
@@ -51,6 +53,17 @@ def canonical_version(value: str | None) -> str | None:
 def display_version(value: str | None) -> str:
     normalized = canonical_version(value)
     return f"v{normalized}" if normalized else "Desconocida"
+
+
+def parse_release_tag(tag: str, prefix: str = LAUNCHER_TAG_PREFIX) -> str | None:
+    """Devuelve ``X.Y.Z`` para tags ``launcher-vX.Y.Z`` estables; ``None`` si no aplica.
+
+    Los tags con sufijo (``-rc1``, ``+meta``) no se consideran versiones estables.
+    """
+    if not tag.startswith(prefix):
+        return None
+    version = tag[len(prefix):]
+    return version if _STRICT_RE.fullmatch(version) else None
 
 
 def is_newer(candidate: str, current: str) -> bool:

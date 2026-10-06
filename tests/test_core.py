@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 import unittest
 
+from futonhub_auto.channel import CHANNEL
 from futonhub_auto.config import LauncherConfig
 from futonhub_auto.credentials import MemoryCredentialStore
 from futonhub_auto.logging_utils import redact
@@ -32,7 +33,7 @@ class CoreTests(unittest.TestCase):
             path = Path(temp) / "launcher.json"
             config = LauncherConfig.load_or_create(path)
             raw = path.read_text(encoding="utf-8")
-            self.assertEqual(config.branch, "main")
+            self.assertEqual(config.branch, CHANNEL.erp_branch)
             self.assertNotIn("token", raw.casefold())
 
 
@@ -49,9 +50,9 @@ class CoreTests(unittest.TestCase):
                 encoding="utf-8",
             )
             config = LauncherConfig.load_or_create(path)
-            self.assertEqual(config.branch, "main")
+            self.assertEqual(config.branch, CHANNEL.erp_branch)
             persisted = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(persisted["branch"], "main")
+            self.assertNotIn("branch", persisted)  # gestionado por el código, no por el archivo
 
     def test_memory_credentials(self) -> None:
         store = MemoryCredentialStore()

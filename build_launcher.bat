@@ -6,7 +6,7 @@ py -3 --version >nul 2>&1 && set "PYTHON_CMD=py -3"
 if not defined PYTHON_CMD python --version >nul 2>&1 && set "PYTHON_CMD=python"
 if not defined PYTHON_CMD (
   echo [ERROR] Instala Python 3 en la maquina de construccion.
-  pause
+  if /I not "%CI%"=="true" pause
   exit /b 1
 )
 if not exist ".venv_build\Scripts\python.exe" %PYTHON_CMD% -m venv .venv_build
@@ -24,7 +24,7 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed ^
   main.py
 if errorlevel 1 (
   echo RESULTADO FINAL: BUILD CON ERROR
-  pause
+  if /I not "%CI%"=="true" pause
   exit /b 1
 )
 for /f "usebackq tokens=*" %%H in (`certutil -hashfile "dist\FutonHUB Launcher.exe" SHA256 ^| findstr /R /V "hash CertUtil"`) do set "EXE_SHA=%%H"
@@ -35,4 +35,4 @@ echo.
 echo EXE generado en: %CD%\dist\FutonHUB-Launcher.exe
 echo SHA-256: %CD%\dist\FutonHUB-Launcher.exe.sha256
 echo RESULTADO FINAL: LAUNCHER EXE CREADO
-pause
+if /I not "%CI%"=="true" pause

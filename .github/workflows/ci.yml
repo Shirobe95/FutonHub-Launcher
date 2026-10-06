@@ -3,7 +3,7 @@ name: CI Launcher
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'test/**']
   pull_request:
     branches: [main]
 
@@ -37,6 +37,13 @@ jobs:
         env:
           CI: "true"
         run: build_launcher.bat
+
+      - name: Smoke test the executable
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist/FutonHUB-Launcher.exe -ArgumentList '--selftest','selftest.json' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path selftest.json)) { throw "Executable self-test failed (exit $($p.ExitCode))" }
+          if (-not ((Get-Content selftest.json -Raw | ConvertFrom-Json).ok)) { throw "Self-test reported failure" }
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7

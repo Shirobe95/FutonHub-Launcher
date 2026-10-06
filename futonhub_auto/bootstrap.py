@@ -51,11 +51,17 @@ def ensure_launcher_installed(paths: AppPaths) -> bool:
         return False
 
     temporary = target.with_suffix(".exe.new")
-    shutil.copy2(current, temporary)
-    if target.exists() and _same_file_content(temporary, target):
+    try:
+        shutil.copy2(current, temporary)
+        if target.exists() and _same_file_content(temporary, target):
+            temporary.unlink(missing_ok=True)
+        else:
+            temporary.replace(target)
+    except OSError:
+        # El launcher instalado está en uso (u otro bloqueo): no se interrumpe el arranque;
+        # esta copia sigue funcionando y el bloqueo de instancia única evita duplicados.
         temporary.unlink(missing_ok=True)
-    else:
-        temporary.replace(target)
+        return False
     register_windows_integration(target, LAUNCHER_VERSION)
     subprocess.Popen(
         [str(target)],

@@ -36,6 +36,23 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def python_tag(python: Path) -> str:
+    """Etiqueta ``pyMAJORMINOR`` del intérprete (p. ej. ``py313``), o ``py`` si no se puede leer."""
+    try:
+        result = subprocess.run(
+            [str(python), "-c", "import sys;print(f'py{sys.version_info[0]}{sys.version_info[1]}')"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "py"
+    tag = (result.stdout or "").strip()
+    return tag if result.returncode == 0 and tag.startswith("py") else "py"
+
+
 def _run(
     command: Sequence[str],
     cwd: Path,
@@ -67,7 +84,7 @@ def _valid_python(command: Sequence[str]) -> Path | None:
                 *command,
                 "-c",
                 (
-                    "import sys;print(sys.executable);"
+                    "import sys, tkinter, venv, ensurepip;print(sys.executable);"
                     "raise SystemExit(0 if sys.version_info >= (3,11) else 1)"
                 ),
             ],
@@ -207,7 +224,8 @@ def prepare_runtime(
     if not requirements.is_file():
         raise ValidationError("La rama no contiene requirements_erp.txt")
     requirements_hash = sha256_file(requirements)
-    venv_dir = runtime_root / "venvs" / requirements_hash[:16]
+    tag = python_tag(base_python)
+    venv_dir = runtime_root / "venvs" / f"{requirements_hash[:16]}-{tag}"
     python = (
         venv_dir / "Scripts/python.exe"
         if os.name == "nt"

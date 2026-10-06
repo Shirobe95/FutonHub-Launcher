@@ -20,7 +20,7 @@ class RepositoryLayoutTests(unittest.TestCase):
     def test_release_workflow_publishes_expected_assets(self) -> None:
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
-        self.assertIn("launcher-v${{ inputs.version }}", workflow)
+        self.assertIn("launcher-v$env:VERSION", workflow)
         self.assertIn("FutonHUB-Launcher.exe", workflow)
         self.assertIn("FutonHUB-Launcher.exe.sha256", workflow)
         self.assertIn("contents: write", workflow)

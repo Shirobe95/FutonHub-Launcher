@@ -11,23 +11,19 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
 
 from . import LAUNCHER_VERSION
+from .channel import CHANNEL, STABLE
 from .config import LauncherConfig
 from .credentials import CredentialStore, WindowsCredentialStore
 from .desktop import register_windows_integration, launch_erp, read_erp_log_tail
 from .dialogs import install_visual_style, show_styled_message
-from .errors import AuthenticationError, DownloadError, LauncherError
-from .github_api import GitHubClient
+from .errors import LauncherError
+from .flow import FailureDecision, StartupFlow
+from .github_api import GitHubClient, clean_token
 from .paths import AppPaths
 from .resources import resource_path
-from .self_update import download_update, find_update, schedule_update
 from .transaction import DirectGitUpdater
 from .uninstall import schedule_full_uninstall
-from .versioning import (
-    FutonHUBVersionState,
-    canonical_version,
-    fetch_remote_futonhub_version,
-    read_installed_futonhub_version,
-)
+from .versioning import FutonHUBVersionState
 
 
 class LauncherWindow:
@@ -53,12 +49,15 @@ class LauncherWindow:
         self.admin_visible = not self.config.worker_mode or os.environ.get("FUTONHUB_ADMIN") == "1"
         self.activity_lines: list[str] = []
         self._build()
+        for notice in config.notices:
+            self._append("Configuración: " + notice)
         self.root.after(80, self._drain)
         self.root.after(300, self.start_automatic)
 
     def _build(self) -> None:
         install_visual_style(self.root)
-        self.root.title(f"FutonHUB Launcher {LAUNCHER_VERSION}")
+        badge = f" [{CHANNEL.window_badge}]" if CHANNEL.window_badge else ""
+        self.root.title(f"FutonHUB Launcher {LAUNCHER_VERSION}{badge}")
         self.root.geometry("590x430")
         self.root.minsize(520, 390)
         try:
@@ -98,7 +97,7 @@ class LauncherWindow:
         ).grid(row=0, column=1, sticky="w")
         ttk.Label(
             header,
-            text=f"Launcher v{LAUNCHER_VERSION} · instalación y actualización automática",
+            text=f"Launcher v{LAUNCHER_VERSION}{badge} · instalación y actualización automática",
             style="Subtitle.TLabel",
         ).grid(row=1, column=1, sticky="w")
 
@@ -207,7 +206,21 @@ class LauncherWindow:
             command=self.uninstall_all,
             style="Danger.TButton",
         )
-        self.uninstall_button.grid(row=0, column=3)
+        self.uninstall_button.grid(row=0, column=3, padx=(0, 8))
+        self.restore_button = ttk.Button(
+            self.admin_frame,
+            text="Restaurar anterior…",
+            command=self.restore_previous,
+            style="Secondary.TButton",
+        )
+        self.restore_button.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.resume_button = ttk.Button(
+            self.admin_frame,
+            text="Reanudar actualizaciones",
+            command=self.resume_updates,
+            style="Secondary.TButton",
+        )
+        self.resume_button.grid(row=1, column=2, columnspan=2, sticky="w", pady=(8, 0))
         if not self.admin_visible:
             self.admin_frame.grid_remove()
         self.root.bind("<Control-Shift-A>", lambda _event: self.toggle_admin())
@@ -281,6 +294,8 @@ class LauncherWindow:
         self.github_button.configure(state=state)
         self.env_button.configure(state=state)
         self.uninstall_button.configure(state=state)
+        self.restore_button.configure(state=state)
+        self.resume_button.configure(state=state)
         if value:
             self.open_button.configure(state="disabled")
             self.progress.configure(mode="indeterminate")
@@ -371,6 +386,27 @@ class LauncherWindow:
                         f"Nuevo launcher {version} verificado. Reiniciando…"
                     )
                     self.root.after(350, self.root.destroy)
+                elif event == "token_ok":
+                    try:
+                        self.store.write(self.config.credential_target, str(payload))
+                    except LauncherError as exc:
+                        self._append(f"No se pudo guardar el token: {exc}")
+                elif event == "degraded":
+                    decision: FailureDecision = payload
+                    self._set_busy(False, decision.message)
+                    self._append("AVISO: " + decision.message)
+                    self.open_button.configure(state="normal")
+                    if decision.ask_token:
+                        self.root.after(200, self._offer_new_token)
+                    if self.config.auto_open_erp:
+                        self.root.after(900, self.open_erp)
+                elif event == "failed":
+                    decision = payload
+                    self._set_busy(False, "Operación detenida de forma segura")
+                    self._append("ERROR: " + decision.message)
+                    self._show_error("FutonHUB Launcher", decision.message)
+                    if decision.ask_token:
+                        self.root.after(200, self._offer_new_token)
                 elif event == "launcher_update_error":
                     self._append("Aviso actualización launcher: " + str(payload))
                     self._show_error(
@@ -396,7 +432,17 @@ class LauncherWindow:
         self.root.after(80, self._drain)
 
     def _token(self) -> str | None:
-        return self.store.read(self.config.credential_target)
+        try:
+            token = self.store.read(self.config.credential_target)
+            if not token and self.config.credential_target != STABLE.credential_target:
+                # Canal de pruebas: reutiliza (solo lectura) el token del launcher estable.
+                token = self.store.read(STABLE.credential_target)
+                if token:
+                    self._append("Se reutiliza el token de solo lectura del launcher estable.")
+            return token
+        except LauncherError as exc:
+            self._append(f"No se pudo leer el token guardado: {exc}")
+            return None
 
     def _ask_token(self) -> str | None:
         token = simpledialog.askstring(
@@ -408,7 +454,16 @@ class LauncherWindow:
             show="•",
             parent=self.root,
         )
-        return token.strip() if token else None
+        return clean_token(token) or None
+
+    def _offer_new_token(self) -> None:
+        if messagebox.askyesno(
+            "Acceso GitHub",
+            "El token de GitHub no es válido, ha caducado o no tiene permisos.\n\n"
+            "¿Quieres introducir uno nuevo ahora?",
+        ):
+            self.configure_token()
+            self.start_automatic()
 
     def configure_token(self) -> None:
         token = self._ask_token()
@@ -428,6 +483,42 @@ class LauncherWindow:
             )
         except LauncherError as exc:
             self._show_error("GitHub", str(exc))
+
+    def restore_previous(self) -> None:
+        if self.busy:
+            return
+        updater = DirectGitUpdater(self.paths, self.config, lambda _t: None, lambda _w, _t: None)
+        backups = updater.list_backups()
+        if not backups:
+            messagebox.showinfo("Restaurar versión", "No hay copias de seguridad disponibles todavía.")
+            return
+        name, commit, _mtime = backups[0]
+        if not messagebox.askyesno(
+            "Restaurar versión anterior",
+            f"Se restaurará la copia más reciente ({commit[:12]}).\n"
+            "Tu .env y tus datos locales se conservan y las actualizaciones "
+            "automáticas quedarán en pausa hasta que pulses «Reanudar».\n\n¿Continuar?",
+        ):
+            return
+        self._set_busy(True, "Restaurando versión anterior…")
+
+        def worker() -> None:
+            try:
+                outcome = updater.restore_backup(name)
+                self._post("success", outcome.message)
+            except Exception as exc:  # noqa: BLE001
+                self._post("error", str(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def resume_updates(self) -> None:
+        updater = DirectGitUpdater(self.paths, self.config, lambda _t: None, lambda _w, _t: None)
+        if not updater.pinned_commit():
+            messagebox.showinfo("Actualizaciones", "Las actualizaciones automáticas ya están activas.")
+            return
+        updater.clear_pin()
+        self._append("Actualizaciones automáticas reanudadas.")
+        self.start_automatic()
 
     def configure_env(self) -> None:
         source = filedialog.askopenfilename(
@@ -506,161 +597,17 @@ class LauncherWindow:
             self.status.set("Pendiente de acceso GitHub")
             return
         self._set_busy(True, "Consultando GitHub…")
+        flow = StartupFlow(
+            self.paths,
+            self.config,
+            self._post,
+            frozen=bool(getattr(sys, "frozen", False)),
+        )
 
         def worker() -> None:
             try:
-                client = GitHubClient(
-                    self.config.owner,
-                    self.config.repository,
-                    self.config.branch,
-                    token,
-                )
-                commit = client.resolve_head()
-                self.store.write(self.config.credential_target, token)
-                if (
-                    self.config.self_update_enabled
-                    and getattr(sys, "frozen", False)
-                ):
-                    try:
-                        launcher_client = GitHubClient(
-                            self.config.launcher_owner,
-                            self.config.launcher_repository,
-                            "main",
-                            require_auth=False,
-                        )
-                        launcher_release = find_update(
-                            launcher_client, LAUNCHER_VERSION
-                        )
-                    except LauncherError as exc:
-                        launcher_release = None
-                        self._post("launcher_update_error", str(exc))
-                    if launcher_release is not None:
-                        self._post(
-                            "status",
-                            f"Nueva versión del launcher: {launcher_release.version}",
-                        )
-                        launcher_update = download_update(
-                            launcher_client,
-                            launcher_release,
-                            self.paths,
-                            lambda value: self._post("status", value),
-                            lambda written, total: self._post(
-                                "progress", (written, total)
-                            ),
-                        )
-                        schedule_update(self.paths, launcher_update)
-                        self._post(
-                            "launcher_restarting", launcher_release.version
-                        )
-                        return
-
-                updater = DirectGitUpdater(
-                    self.paths,
-                    self.config,
-                    lambda text: self._post("status", text),
-                    lambda written, total: self._post(
-                        "progress", (written, total)
-                    ),
-                )
-                recovered = updater.recover()
-                if recovered:
-                    self._post("status", recovered)
-
-                local_commit = updater.local_commit()
-                local_errors: list[str] = []
-                installed_version = read_installed_futonhub_version(
-                    self.paths.app, local_errors.append
-                )
-                if installed_version is None and local_commit:
-                    try:
-                        installed_version = canonical_version(
-                            client.exact_semver_tag(local_commit)
-                        )
-                    except Exception as exc:
-                        local_errors.append(
-                            "No se pudo consultar el tag de la instalación: "
-                            f"{exc}"
-                        )
-
-                remote_errors: list[str] = []
-                remote_version = fetch_remote_futonhub_version(
-                    client, commit.sha, remote_errors.append
-                )
-                state = FutonHUBVersionState(
-                    installed_commit=local_commit,
-                    remote_commit=commit.sha,
-                    installed_version=installed_version,
-                    remote_version=remote_version,
-                )
-                self._post("versions", state)
-                self._post("status", state.status_text)
-                for detail in local_errors + remote_errors:
-                    self._post("technical", "Diagnóstico de versión: " + detail)
-
-                outcome = updater.install_commit(client, commit)
-
-                refreshed_commit = updater.local_commit()
-                refreshed_errors: list[str] = []
-                refreshed_version = read_installed_futonhub_version(
-                    self.paths.app, refreshed_errors.append
-                )
-                if refreshed_version is None and refreshed_commit:
-                    try:
-                        refreshed_version = canonical_version(
-                            client.exact_semver_tag(refreshed_commit)
-                        )
-                    except Exception as exc:
-                        refreshed_errors.append(
-                            "No se pudo consultar el tag tras actualizar: "
-                            f"{exc}"
-                        )
-                final_state = FutonHUBVersionState(
-                    installed_commit=refreshed_commit,
-                    remote_commit=commit.sha,
-                    installed_version=refreshed_version,
-                    remote_version=remote_version,
-                )
-                self._post("versions", final_state)
-                for detail in refreshed_errors:
-                    self._post("technical", "Diagnóstico de versión: " + detail)
-                self._post(
-                    "success",
-                    {"message": outcome.message, "state": final_state},
-                )
-            except DownloadError as exc:
-                updater = DirectGitUpdater(
-                    self.paths,
-                    self.config,
-                    lambda text: self._post("status", text),
-                    lambda written, total: self._post(
-                        "progress", (written, total)
-                    ),
-                )
-                if updater.installation_ready():
-                    local_commit = updater.local_commit()
-                    installed_version = read_installed_futonhub_version(
-                        self.paths.app
-                    )
-                    state = FutonHUBVersionState(
-                        installed_commit=local_commit,
-                        remote_commit="",
-                        installed_version=installed_version,
-                        remote_version=None,
-                    )
-                    self._post("versions", state)
-                    self._post(
-                        "success",
-                        {
-                            "message": (
-                                "GitHub no está disponible; se abrirá la "
-                                "instalación local."
-                            ),
-                            "state": state,
-                        },
-                    )
-                else:
-                    self._post("error", str(exc))
-            except Exception as exc:
+                flow.run(token)
+            except Exception as exc:  # noqa: BLE001 - último recurso
                 self._post("error", str(exc))
 
         threading.Thread(target=worker, daemon=True).start()
