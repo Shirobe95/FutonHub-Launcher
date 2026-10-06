@@ -1,8 +1,29 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
+from datetime import datetime
 import json
 from pathlib import Path
+from typing import Any
+
+
+CONFIG_SCHEMA = 2
+
+# Ajustes que el usuario puede cambiar y que se conservan entre versiones.
+USER_FIELDS = ("auto_open_erp", "self_update_enabled", "backup_retention")
+# Ajustes de despliegue: SIEMPRE manda el código del launcher. Solo se pueden
+# sobrescribir a mano con la clave ``overrides`` de launcher.json (diagnóstico).
+MANAGED_FIELDS = (
+    "owner",
+    "repository",
+    "branch",
+    "credential_target",
+    "launcher_owner",
+    "launcher_repository",
+    "python_version",
+    "python_installer_url",
+    "python_installer_sha256",
+)
 
 
 @dataclass
@@ -23,6 +44,8 @@ class LauncherConfig:
     python_installer_sha256: str = (
         "c54d9b9bbb8a36e6489363ddd01139707fd781d72f1f9e90c7ec65d0061368e0"
     )
+    # Mensajes de la última carga (JSON corrupto recuperado, valores descartados…).
+    notices: tuple[str, ...] = ()
 
     @classmethod
     def load_or_create(cls, path: Path) -> "LauncherConfig":
@@ -31,17 +54,61 @@ class LauncherConfig:
             config = cls()
             config.save(path)
             return config
+        notices: list[str] = []
+        raw: Any
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"Configuración inválida: {exc}") from exc
-        allowed = set(cls.__dataclass_fields__)
-        return cls(**{key: value for key, value in raw.items() if key in allowed})
+            if not isinstance(raw, dict):
+                raise ValueError("el JSON no es un objeto")
+        except (OSError, ValueError) as exc:
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            broken = path.with_name(f"{path.name}.corrupt-{stamp}")
+            try:
+                path.replace(broken)
+                notices.append(
+                    f"launcher.json estaba dañado ({exc}); se guardó como {broken.name} "
+                    "y se restauró la configuración por defecto."
+                )
+            except OSError:
+                notices.append(f"launcher.json estaba dañado ({exc}); se usa la configuración por defecto.")
+            config = cls(notices=tuple(notices))
+            config.save(path)
+            return config
 
-    def save(self, path: Path) -> None:
+        config = cls()
+        overrides = raw.get("overrides") if isinstance(raw.get("overrides"), dict) else {}
+        for name in USER_FIELDS:
+            if name in raw:
+                value = raw[name]
+                if name == "backup_retention":
+                    if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 20:
+                        config.backup_retention = value
+                    else:
+                        notices.append(f"backup_retention={value!r} no es válido (1-20); se usa {config.backup_retention}.")
+                elif isinstance(value, bool):
+                    setattr(config, name, value)
+                else:
+                    notices.append(f"{name}={value!r} no es booleano; se usa el valor por defecto.")
+        for name in MANAGED_FIELDS:
+            if name in overrides and isinstance(overrides[name], str) and overrides[name].strip():
+                setattr(config, name, overrides[name].strip())
+                notices.append(f"Valor manual en overrides: {name}.")
+        config.notices = tuple(notices)
+        if raw.get("schema") != CONFIG_SCHEMA or notices:
+            config.save(path, overrides=overrides)
+        return config
+
+    def save(self, path: Path, overrides: dict[str, Any] | None = None) -> None:
+        payload: dict[str, Any] = {"schema": CONFIG_SCHEMA}
+        for name in USER_FIELDS:
+            payload[name] = getattr(self, name)
+        if overrides:
+            payload["overrides"] = overrides
         temporary = path.with_suffix(path.suffix + ".tmp")
         temporary.write_text(
-            json.dumps(asdict(self), ensure_ascii=False, indent=2) + "\n",
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
         temporary.replace(path)
+
+

@@ -26,10 +26,19 @@ jobs:
 
       - name: Verify requested version matches source
         shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
+          if ($env:VERSION -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw "Version must look like 1.2.3 (got '$env:VERSION')"
+          }
           $SourceVersion = python -c "from futonhub_auto import LAUNCHER_VERSION; print(LAUNCHER_VERSION)"
-          if ($SourceVersion.Trim() -ne "${{ inputs.version }}") {
-            throw "Requested version ${{ inputs.version }} does not match source version $SourceVersion"
+          if ($SourceVersion.Trim() -ne $env:VERSION) {
+            throw "Requested version $env:VERSION does not match source version $SourceVersion"
+          }
+          $Info = Get-Content assets/version_info.txt -Raw
+          if ($Info -notmatch "ProductVersion', '$([regex]::Escape($env:VERSION))'") {
+            throw "assets/version_info.txt does not declare version $env:VERSION"
           }
 
       - name: Install build dependencies
@@ -47,16 +56,26 @@ jobs:
           CI: "true"
         run: build_launcher.bat
 
+      - name: Verify checksum file matches the executable
+        shell: pwsh
+        run: |
+          $Expected = (Get-Content dist/FutonHUB-Launcher.exe.sha256 -Raw).Trim().Split(' ')[0].ToLower()
+          $Actual = (Get-FileHash dist/FutonHUB-Launcher.exe -Algorithm SHA256).Hash.ToLower()
+          if ($Expected -ne $Actual) { throw "Checksum mismatch: $Expected vs $Actual" }
+
       - name: Publish GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
-          $Tag = "launcher-v${{ inputs.version }}"
+          $Tag = "launcher-v$env:VERSION"
           gh release create $Tag `
             "dist/FutonHUB-Launcher.exe" `
             "dist/FutonHUB-Launcher.exe.sha256" `
-            --repo "${{ github.repository }}" `
-            --target "${{ github.sha }}" `
-            --title "FutonHUB Launcher ${{ inputs.version }}" `
+            --repo $env:REPO `
+            --target $env:SHA `
+            --title "FutonHUB Launcher $env:VERSION" `
             --generate-notes

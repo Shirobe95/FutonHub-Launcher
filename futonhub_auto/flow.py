@@ -1,0 +1,155 @@
+"""Flujo de arranque del launcher, independiente de Tk (se prueba sin interfaz).
+
+Orden: recuperar -> autoactualizar launcher (público, sin token) -> consultar ERP ->
+instalar. Si GitHub falla pero hay instalación local, se abre la versión instalada
+y se explica el motivo (token caducado, límite de uso, rama inexistente, sin red…).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from . import LAUNCHER_VERSION
+from .config import LauncherConfig
+from .errors import (
+    AlreadyRunningError,
+    AuthenticationError,
+    DownloadError,
+    LauncherError,
+    RateLimitError,
+    RemoteNotFoundError,
+    UpdateError,
+    ValidationError,
+)
+from .github_api import GitHubClient
+from .paths import AppPaths
+from .self_update import download_update, find_update, schedule_update
+from .transaction import DirectGitUpdater
+
+Emit = Callable[[str, Any], None]
+
+
+@dataclass(frozen=True)
+class FailureDecision:
+    kind: str  # token | not_found | rate_limit | network | update_failed | busy | unexpected
+    open_local: bool
+    ask_token: bool
+    message: str
+
+
+def decide_failure(exc: BaseException, installation_ready: bool) -> FailureDecision:
+    """Traduce un fallo remoto en la acción correcta para el usuario."""
+    if isinstance(exc, AlreadyRunningError):
+        return FailureDecision("busy", False, False, str(exc))
+    if isinstance(exc, AuthenticationError):
+        kind, ask = "token", True
+    elif isinstance(exc, RemoteNotFoundError):
+        kind, ask = "not_found", False
+    elif isinstance(exc, RateLimitError):
+        kind, ask = "rate_limit", False
+    elif isinstance(exc, DownloadError):
+        kind, ask = "network", False
+    elif isinstance(exc, (ValidationError, UpdateError)):
+        kind, ask = "update_failed", False
+    else:
+        return FailureDecision("unexpected", False, False, str(exc) or type(exc).__name__)
+    if installation_ready:
+        suffix = " Se abre la versión instalada."
+        if kind == "update_failed":
+            suffix = " Se mantiene la versión anterior, que funciona."
+        return FailureDecision(kind, True, ask, str(exc) + suffix)
+    return FailureDecision(kind, False, ask, str(exc))
+
+
+class StartupFlow:
+    def __init__(
+        self,
+        paths: AppPaths,
+        config: LauncherConfig,
+        emit: Emit,
+        *,
+        frozen: bool,
+        client_factory: Callable[..., GitHubClient] = GitHubClient,
+    ) -> None:
+        self.paths = paths
+        self.config = config
+        self.emit = emit
+        self.frozen = frozen
+        self.client_factory = client_factory
+
+    def _updater(self) -> DirectGitUpdater:
+        return DirectGitUpdater(
+            self.paths,
+            self.config,
+            lambda text: self.emit("status", text),
+            lambda written, total: self.emit("progress", (written, total)),
+        )
+
+    def _check_launcher_update(self) -> bool:
+        """True si se programó una autoactualización y hay que cerrar."""
+        if not (self.config.self_update_enabled and self.frozen):
+            return False
+        try:
+            client = self.client_factory(
+                self.config.launcher_owner,
+                self.config.launcher_repository,
+                "main",
+                require_auth=False,
+            )
+            release = find_update(client, LAUNCHER_VERSION)
+        except LauncherError as exc:
+            self.emit(
+                "status",
+                f"No se pudo comprobar la versión del launcher; se continúa. Detalle: {exc}",
+            )
+            return False
+        if release is None:
+            return False
+        self.emit("status", f"Nueva versión del launcher: {release.version}")
+        try:
+            update = download_update(
+                client,
+                release,
+                self.paths,
+                lambda value: self.emit("status", value),
+                lambda written, total: self.emit("progress", (written, total)),
+            )
+            schedule_update(self.paths, update)
+        except LauncherError as exc:
+            self.emit("status", f"No se pudo autoactualizar el launcher ({exc}); se continúa.")
+            return False
+        self.emit("launcher_restarting", release.version)
+        return True
+
+    def run(self, token: str) -> None:
+        updater = self._updater()
+        try:
+            recovered = updater.recover()
+            if recovered:
+                self.emit("status", recovered)
+            if self._check_launcher_update():
+                return
+            client = self.client_factory(
+                self.config.owner, self.config.repository, self.config.branch, token
+            )
+            commit = client.resolve_head()
+            self.emit("token_ok", token)
+            local = updater.local_commit()
+            self.emit("commits", (local, commit.sha))
+            pinned = updater.pinned_commit()
+            if pinned and pinned == local and updater.installation_ready():
+                self.emit(
+                    "success",
+                    "Versión fijada: las actualizaciones automáticas están en pausa. "
+                    "Usa «Reanudar actualizaciones» para volver a seguir GitHub.",
+                )
+                return
+            outcome = updater.install_commit(client, commit)
+            self.emit("success", outcome.message)
+        except Exception as exc:  # noqa: BLE001 - se clasifica y se informa
+            decision = decide_failure(exc, updater.installation_ready())
+            self.emit("commits", (updater.local_commit(), "—"))
+            if decision.open_local:
+                self.emit("degraded", decision)
+            else:
+                self.emit("failed", decision)

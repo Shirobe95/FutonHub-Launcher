@@ -11,6 +11,10 @@ from .errors import ValidationError
 PROTECTED_PATHS = (
     "GestorWoo/.env",
     "GestorWoo/data",
+    "GestorWoo/exports",
+    "GestorWoo/logs",
+    "GestorWoo/backups",
+    "GestorWoo/user_config",
     "CalculoCoste/constantes_negocio.json",
     "CalculoCoste/data.xlsx",
     "logs",

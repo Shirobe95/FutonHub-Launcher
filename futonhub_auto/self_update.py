@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import sys
 import tempfile
 from typing import Callable
 
@@ -14,13 +13,32 @@ from .bootstrap import launcher_install_path
 from .errors import DownloadError, ValidationError
 from .github_api import GitHubClient, LauncherRelease
 from .paths import AppPaths
+from .pshell import quote
 from .versioning import is_newer
 
 
 Progress = Callable[[int, int | None], None]
 Status = Callable[[str], None]
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
-_SHA_RE = re.compile(r"\b([0-9a-fA-F]{64})\b")
+EXPECTED_ASSET_NAME = "FutonHUB-Launcher.exe"
+_SHA_LINE_RE = re.compile(r"^([0-9a-fA-F]{64})(?:\s+\*?(.+?))?\s*$")
+
+
+def parse_checksum(text: str) -> str:
+    """Extrae el SHA-256 del ``.sha256`` (formato ``<hash>  <archivo>``).
+
+    Si la línea indica nombre de archivo, debe ser ``FutonHUB-Launcher.exe``.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) != 1:
+        raise ValidationError("El archivo SHA-256 del launcher debe tener exactamente una línea")
+    match = _SHA_LINE_RE.match(lines[0])
+    if not match:
+        raise ValidationError("El archivo SHA-256 del launcher es inválido")
+    name = match.group(2)
+    if name and Path(name.replace("\\", "/")).name != EXPECTED_ASSET_NAME:
+        raise ValidationError(f"El SHA-256 corresponde a otro archivo ({name})")
+    return match.group(1).lower()
 
 
 @dataclass(frozen=True)
@@ -63,10 +81,11 @@ def download_update(
         checksum_text = checksum.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         raise DownloadError(f"No se pudo leer el SHA-256 del launcher: {exc}") from exc
-    match = _SHA_RE.search(checksum_text)
-    if not match:
-        raise ValidationError("El archivo SHA-256 del launcher es inválido")
-    expected = match.group(1).lower()
+    try:
+        expected = parse_checksum(checksum_text)
+    except ValidationError:
+        executable.unlink(missing_ok=True)
+        raise
     actual = sha256_file(executable)
     if actual != expected:
         executable.unlink(missing_ok=True)
@@ -80,14 +99,14 @@ def build_replacement_script(
     *,
     pid: int,
 ) -> str:
-    safe_target = str(target).replace("'", "''")
-    safe_source = str(source).replace("'", "''")
+    safe_target = quote(target)
+    safe_source = quote(source)
     return "\n".join(
         [
             "$ErrorActionPreference = 'Stop'",
             f"$LauncherPid = {int(pid)}",
-            f"$Target = '{safe_target}'",
-            f"$Source = '{safe_source}'",
+            f"$Target = {safe_target}",
+            f"$Source = {safe_source}",
             "$Backup = $Target + '.previous'",
             "Wait-Process -Id $LauncherPid -ErrorAction SilentlyContinue",
             "Start-Sleep -Milliseconds 700",

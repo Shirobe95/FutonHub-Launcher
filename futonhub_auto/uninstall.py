@@ -8,6 +8,7 @@ import tempfile
 from .credentials import CredentialStore
 from .errors import ValidationError
 from .paths import AppPaths
+from .pshell import quote
 
 
 IS_WINDOWS = os.name == "nt"
@@ -20,12 +21,12 @@ def desktop_shortcut_path() -> Path:
 
 
 def build_cleanup_script(paths: AppPaths, *, pid: int) -> str:
-    root = str(paths.root).replace("'", "''")
+    root = quote(paths.root)
     return "\n".join(
         [
             "$ErrorActionPreference = 'SilentlyContinue'",
             f"$LauncherPid = {int(pid)}",
-            f"$InstallRoot = '{root}'",
+            f"$InstallRoot = {root}",
             "$Desktop = [Environment]::GetFolderPath('Desktop')",
             "$Programs = [Environment]::GetFolderPath('Programs')",
             "$DesktopShortcut = Join-Path $Desktop 'FutonHUB.lnk'",

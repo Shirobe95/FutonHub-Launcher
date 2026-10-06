@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.13.0 (rama test/upgrade-001, sin publicar)
+
+Funcional (sin cambios visuales todavía):
+
+- GitHub: errores diferenciados (token 401, permisos 403, límite de uso 403/429, recurso 404,
+  caídas 5xx/red). Reintentos con espera para fallos transitorios. El token se limpia
+  (espacios, comillas, `Bearer`) y se valida antes de usarlo. `Authorization` ya no se reenvía
+  en redirecciones a otro host.
+- Si GitHub falla (token caducado, límite de uso, rama inexistente, sin red) y hay una versión
+  instalada, **se abre esa versión** y se explica el motivo; solo se pide un token nuevo cuando
+  el problema es el token. Una actualización fallida conserva la versión anterior.
+- La autoactualización del launcher se comprueba **antes** y no depende del token del ERP.
+- `launcher.json`: los ajustes de despliegue (rama, repos, Python e instalador) los manda
+  siempre el código del launcher; solo se conservan `auto_open_erp`, `self_update_enabled` y
+  `backup_retention` (validados). JSON dañado: se guarda como `.corrupt-<fecha>` y se restaura.
+  Para forzar un valor a mano existe la clave `overrides`.
+- Una sola instancia del launcher y un bloqueo entre procesos para actualizar/recuperar.
+- Nuevo: «Restaurar anterior…» (desde `Rollback/`, conserva `.env` y datos) y «Reanudar
+  actualizaciones» (la restauración fija la versión hasta reanudar).
+- `GestorWoo/exports|logs|backups|user_config` pasan a conservarse al actualizar.
+- Entorno virtual indexado por hash de requisitos **y** versión de Python.
+- Endurecimiento del ZIP (límites de tamaño/entradas/ratio, nombres inválidos en Windows),
+  del `.sha256` (una línea, nombre correcto) y de la selección de releases (la versión
+  mayor estable; se ignoran `-rc`/sufijos y dígitos Unicode).
+- Scripts PowerShell: se escapan también las comillas tipográficas.
+- Errores no controlados: se escriben en `Logs/launcher-crash.log` y se avisa al usuario.
+- `release.yml`: versión validada y pasada por variable de entorno, comprobación de
+  `version_info.txt` y del `.sha256` antes de publicar. `build_launcher.bat` no hace `pause` en CI.
+- Tests: 51 -> 106; cobertura 43 % -> 60 %.
+
 ## 0.12.0
 
 - Separate ERP updates from launcher updates.
