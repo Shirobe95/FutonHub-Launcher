@@ -45,7 +45,7 @@ class FakeDownloadClient:
 class DistributionTests(unittest.TestCase):
     def test_version_and_build_identity_assets_are_current(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        self.assertEqual(LAUNCHER_VERSION, "0.14.1")
+        self.assertEqual(LAUNCHER_VERSION, "0.14.2")
         build = (root / "build_launcher.bat").read_text(encoding="ascii")
         self.assertIn('--icon "assets\\futonhub.ico"', build)
         self.assertIn('--version-file "assets\\version_info.txt"', build)
@@ -56,19 +56,19 @@ class DistributionTests(unittest.TestCase):
         self.assertIn('certutil -decode "assets\\launcher_icon.png.b64"', build)
         info = (root / "assets/version_info.txt").read_text(encoding="utf-8")
         self.assertIn("FutonHUB Launcher", info)
-        self.assertIn("0.14.1", info)
+        self.assertIn("0.14.2", info)
 
     def test_self_update_defaults_to_enabled(self) -> None:
         self.assertTrue(LauncherConfig().self_update_enabled)
 
     def test_worker_mode_hides_admin_controls_by_default(self) -> None:
         self.assertTrue(LauncherConfig().worker_mode)
-        source = (Path(__file__).resolve().parents[1] / "futonhub_auto/gui.py").read_text(encoding="utf-8")
+        source = (Path(__file__).resolve().parents[1] / "futonhub_auto/gui_compact.py").read_text(encoding="utf-8")
         self.assertIn("self.admin_frame.grid_remove()", source)
         self.assertIn("<Control-Shift-A>", source)
 
     def test_styled_error_dialog_is_used_for_reportable_errors(self) -> None:
-        source = (Path(__file__).resolve().parents[1] / "futonhub_auto/gui.py").read_text(encoding="utf-8")
+        source = (Path(__file__).resolve().parents[1] / "futonhub_auto/gui_compact.py").read_text(encoding="utf-8")
         self.assertIn("_show_error", source)
         self.assertIn("Mensaje para soporte", (Path(__file__).resolve().parents[1] / "futonhub_auto/dialogs.py").read_text(encoding="utf-8"))
         self.assertIn("Copiar mensaje", (Path(__file__).resolve().parents[1] / "futonhub_auto/dialogs.py").read_text(encoding="utf-8"))

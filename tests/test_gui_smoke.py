@@ -28,10 +28,15 @@ class GuiSmokeTests(unittest.TestCase):
         except tk.TclError as exc:  # sin pantalla
             self.skipTest(f"sin entorno gráfico: {exc}")
         self.addCleanup(self.root.destroy)
-        from futonhub_auto import gui
+        cls = self.window_cls()
+        with patch.object(cls, "start_automatic", lambda self: None):
+            self.window = cls(self.root, paths, LauncherConfig(), MemoryCredentialStore())
 
-        with patch.object(gui.LauncherWindow, "start_automatic", lambda self: None):
-            self.window = gui.LauncherWindow(self.root, paths, LauncherConfig(), MemoryCredentialStore())
+    @staticmethod
+    def window_cls():
+        from futonhub_auto.gui_compact import LauncherWindow
+
+        return LauncherWindow
 
     def pump(self) -> None:
         self.window._drain()
@@ -68,6 +73,42 @@ class GuiSmokeTests(unittest.TestCase):
             self.assertEqual(str(button.cget("state")), "disabled")
         w._set_busy(False)
         self.assertEqual(str(w.retry_button.cget("state")), "normal")
+
+
+class PalikoGuiSmokeTests(GuiSmokeTests):
+    @staticmethod
+    def window_cls():
+        from futonhub_auto.gui_paliko import PalikoLauncherWindow
+
+        return PalikoLauncherWindow
+
+    def test_admin_panel_is_hidden_in_worker_mode_and_has_recovery_actions(self) -> None:
+        w = self.window
+        self.assertFalse(w.admin_visible)
+        self.assertFalse(w.more_button.winfo_ismapped() and w.admin_visible)
+        labels = [w.more_menu.entrycget(i, "label") for i in range(w.more_menu.index("end") + 1) if w.more_menu.type(i) == "command"]
+        for expected in ("Restaurar versión anterior…", "Reanudar actualizaciones", "Desinstalar…"):
+            self.assertIn(expected, labels)
+        w.toggle_admin()
+        self.assertTrue(w.admin_visible)
+
+    def test_busy_state_disables_actions(self) -> None:
+        w = self.window
+        w._set_busy(True, "Descargando")
+        for button in (w.retry_button, w.github_button, w.env_button, w.more_button):
+            self.assertEqual(str(button.cget("state")), "disabled")
+        w._set_busy(False)
+        self.assertEqual(str(w.retry_button.cget("state")), "normal")
+
+    def test_palette_is_dark_and_dispatcher_picks_style_by_channel(self) -> None:
+        from futonhub_auto import gui
+        from futonhub_auto.theme import PALETTE
+
+        self.assertEqual(self.root.cget("bg"), PALETTE.bg)
+        with patch.object(gui, "CHANNEL", type("C", (), {"name": "stable"})):
+            self.assertEqual(gui.window_class().__name__, "LauncherWindow")
+        with patch.object(gui, "CHANNEL", type("C", (), {"name": "test"})):
+            self.assertEqual(gui.window_class().__name__, "PalikoLauncherWindow")
 
 
 if __name__ == "__main__":

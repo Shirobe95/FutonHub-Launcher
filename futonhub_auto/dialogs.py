@@ -44,41 +44,52 @@ def show_styled_message(
     details: str = "",
     kind: str = "error",
     on_open_logs: Callable[[], None] | None = None,
+    dark: bool = False,
 ) -> None:
+    if dark:
+        from .theme import PALETTE as P
+
+        surface, text_c, muted, box_bg = P.surface, P.text, P.text_muted, P.bg
+        danger, warning, accent = P.danger, P.warning, P.accent
+    else:
+        surface, text_c, muted, box_bg = SURFACE, TEXT, MUTED, "#f7f8f7"
+        danger, warning, accent = DANGER, WARNING, ACCENT
     dialog = tk.Toplevel(parent)
     dialog.title(title)
     dialog.transient(parent)
     dialog.grab_set()
     dialog.resizable(False, False)
-    dialog.configure(bg=SURFACE)
+    dialog.configure(bg=surface)
 
-    color = DANGER if kind == "error" else WARNING if kind == "warning" else ACCENT
+    color = danger if kind == "error" else warning if kind == "warning" else accent
     icon = "!" if kind in {"error", "warning"} else "i"
 
-    frame = ttk.Frame(dialog, padding=22, style="App.TFrame")
+    frame = tk.Frame(dialog, bg=surface, padx=22, pady=22)
     frame.grid(row=0, column=0, sticky="nsew")
     frame.columnconfigure(1, weight=1)
 
-    badge = tk.Canvas(frame, width=42, height=42, bg=SURFACE, highlightthickness=0)
+    badge = tk.Canvas(frame, width=42, height=42, bg=surface, highlightthickness=0)
     badge.grid(row=0, column=0, rowspan=2, sticky="n", padx=(0, 14))
     badge.create_oval(4, 4, 38, 38, fill=color, outline=color)
     badge.create_text(21, 21, text=icon, fill="white", font=("Segoe UI", 19, "bold"))
 
-    ttk.Label(frame, text=title, style="Title.TLabel").grid(row=0, column=1, sticky="w")
-    ttk.Label(
+    tk.Label(frame, text=title, bg=surface, fg=text_c, font=("Segoe UI", 15, "bold")).grid(row=0, column=1, sticky="w")
+    tk.Label(
         frame,
         text=message,
-        style="App.TLabel",
+        bg=surface,
+        fg=text_c,
         wraplength=470,
         justify="left",
     ).grid(row=1, column=1, sticky="ew", pady=(6, 12))
 
     details_text = details.strip()
     if details_text:
-        ttk.Label(
+        tk.Label(
             frame,
             text="Mensaje para soporte",
-            style="Muted.TLabel",
+            bg=surface,
+            fg=muted,
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 4))
         box = tk.Text(
             frame,
@@ -86,7 +97,8 @@ def show_styled_message(
             height=9,
             wrap="word",
             font=("Consolas", 8),
-            bg="#f7f8f7",
+            bg=box_bg,
+            fg=text_c,
             relief="flat",
             padx=10,
             pady=8,
@@ -97,7 +109,7 @@ def show_styled_message(
     else:
         box = None
 
-    buttons = ttk.Frame(frame, style="App.TFrame")
+    buttons = tk.Frame(frame, bg=surface)
     buttons.grid(row=4, column=0, columnspan=2, sticky="e", pady=(16, 0))
 
     def copy_details() -> None:

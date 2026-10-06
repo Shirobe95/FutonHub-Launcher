@@ -184,11 +184,12 @@ class FutonHUBVersioningTests(unittest.TestCase):
 
     def test_main_ui_uses_semantic_version_titles(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        source = (root / "futonhub_auto/gui.py").read_text(encoding="utf-8")
-        self.assertIn('"Versión instalada"', source)
-        self.assertIn('"Versión disponible"', source)
-        self.assertNotIn('(0, "Commit instalado"', source)
-        self.assertNotIn('(1, "Commit remoto"', source)
+        for name in ("gui_compact.py", "gui_paliko.py"):
+            source = (root / "futonhub_auto" / name).read_text(encoding="utf-8").casefold()
+            self.assertIn('"versión instalada"', source, name)
+            self.assertIn('"versión disponible"', source, name)
+            self.assertNotIn('(0, "commit instalado"', source)
+            self.assertNotIn('(1, "commit remoto"', source)
 
     def test_github_client_decodes_remote_text_file(self) -> None:
         client = GitHubClient("o", "r", "main", "token")

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.2 (canal test)
+
+El launcher del canal de pruebas usa ahora el estilo PALIKO (oscuro, azul-cian, etiqueta TEST) para distinguirlo
+a simple vista del launcher real, que conserva el diseño compacto de FutonEspai. La interfaz se elige por canal
+(`gui.py` → `gui_compact.py` / `gui_paliko.py`). Mismo comportamiento funcional: modo worker (Ctrl+Shift+A),
+versión semántica, errores copiables (también en tema oscuro).
+
 ## 0.14.1 (canal test)
 
 Une el launcher 0.14.0 (diseño compacto para trabajadores, versión semántica del ERP, popups copiables) con la
